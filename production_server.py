@@ -170,42 +170,18 @@ class ProductionHandler(http.server.SimpleHTTPRequestHandler):
         parsed_url = urllib.parse.urlparse(self.path)
         path = parsed_url.path
 
-        # API: ดึงราคา Live Rates ล่าสุด (ความเร็วสูงจาก RAM Cache)
+        # API: ดึงราคา Live Rates ล่าสุด (ความเร็วสูงจาก RAM Cache ทันทีระดับ Sub-Millisecond)
         if path in ['/api/live-rates', '/api/rates']:
-            # ตรวจสอบว่ามี MT5 Local หรือไม่
-            try:
-                import MetaTrader5 as mt5
-                if mt5.initialize():
-                    for sym_key, candidates in [
-                        ('XAUUSD', ['GOLDm#', 'XAUUSD', 'XAUUSDm', 'GOLD']),
-                        ('EURUSD', ['EURUSD', 'EURUSDm', 'EURUSDm#']),
-                        ('BTCUSDT', ['BTCUSD', 'BTCUSDm#', 'BTCUSDT'])
-                    ]:
-                        for c in candidates:
-                            info = mt5.symbol_info(c)
-                            if info:
-                                tick = mt5.symbol_info_tick(c)
-                                if tick:
-                                    digits = 3 if 'XAU' in sym_key or 'GOLD' in c else info.digits
-                                    LIVE_RATES_CACHE[sym_key] = {
-                                        'symbol': sym_key,
-                                        'actual': c,
-                                        'bid': round(tick.bid, digits),
-                                        'ask': round(tick.ask, digits),
-                                        'close': round(tick.bid, digits),
-                                        'time': tick.time,
-                                        'digits': digits
-                                    }
-                                break
-                    mt5.shutdown()
-            except:
-                pass
-
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok", "rates": LIVE_RATES_CACHE}).encode('utf-8'))
+            self.wfile.write(json.dumps({
+                "status": "ok",
+                "rates": LIVE_RATES_CACHE,
+                "server_time": int(time.time()),
+                "primary_source": "public_api_direct"
+            }).encode('utf-8'))
             return
 
         # API: สถานะระบบ (Health Check)

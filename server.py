@@ -135,13 +135,8 @@ def public_market_data_worker():
 
     while True:
         try:
-            # If MT5 is actively providing data, sleep and let MT5 handle it
-            if MT5_ACTIVE:
-                time.sleep(1)
-                continue
-
             now = int(time.time())
-            # 1. Fetch Binance Crypto (BTC, ETH, SOL)
+            # 1. Fetch Binance Crypto (BTC, ETH, SOL) - PRIMARY
             try:
                 url = "https://api.binance.com/api/v3/ticker/price?symbols=%5B%22BTCUSDT%22,%22ETHUSDT%22,%22SOLUSDT%22%5D"
                 req = urllib.request.Request(url, headers={'User-Agent': 'TradingTools/2.5.7'})
@@ -266,17 +261,20 @@ def mt5_background_worker():
                     tick = mt5.symbol_info_tick(sym)
                     if tick:
                         with LIVE_RATES_LOCK:
-                            LIVE_RATES[target_name] = {
-                                'symbol': target_name,
-                                'actual': sym,
-                                'bid': round(tick.bid, digits),
-                                'ask': round(tick.ask, digits),
-                                'close': round(tick.bid, digits),
-                                'time': tick.time,
-                                'digits': digits,
-                                'source': 'mt5_live'
-                            }
-                time.sleep(0.1)
+                            # MT5 ทำหน้าที่เป็นแผนสำรอง (Secondary / Backup Stream)
+                            existing = LIVE_RATES.get(target_name)
+                            if not existing or (time.time() - existing.get('time', 0) > 4):
+                                LIVE_RATES[target_name] = {
+                                    'symbol': target_name,
+                                    'actual': sym,
+                                    'bid': round(tick.bid, digits),
+                                    'ask': round(tick.ask, digits),
+                                    'close': round(tick.bid, digits),
+                                    'time': int(time.time()),
+                                    'digits': digits,
+                                    'source': 'mt5_backup'
+                                }
+                time.sleep(0.5)
         except Exception:
             MT5_ACTIVE = False
             try:
