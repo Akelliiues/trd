@@ -201,7 +201,6 @@ class ProductionHandler(http.server.SimpleHTTPRequestHandler):
         super().do_GET()
 
 PUBLIC_SYMBOLS_MAP = {
-    'XAUUSD': {'yahoo': 'GC=F', 'digits': 3, 'spread': 0.15},
     'EURUSD': {'yahoo': 'EURUSD=X', 'digits': 5, 'spread': 0.00015},
     'GBPUSD': {'yahoo': 'GBPUSD=X', 'digits': 5, 'spread': 0.00018},
     'USDJPY': {'yahoo': 'JPY=X', 'digits': 3, 'spread': 0.015},
@@ -213,7 +212,7 @@ PUBLIC_SYMBOLS_MAP = {
 
 def public_market_price_poller():
     """
-    Background Feed Poller: ดึงราคาตลาดโลกสดจาก Binance และ Yahoo Finance จริง
+    Background Feed Poller: ดึงราคาตลาดโลกสดจาก Binance (Spot Gold & Crypto) และ Yahoo Finance
     เพื่อให้กราฟบน Server ทำงานและกระพริบเรียลไทม์ 24/7 แม้ในขณะที่ไม่ได้เปิด MT5
     """
     import urllib.request
@@ -222,25 +221,37 @@ def public_market_price_poller():
     while True:
         try:
             now = int(time.time())
-            # 1. Binance Crypto Live Prices (Realtime Sub-Second)
+            # 1. Binance Crypto & Spot Gold (PAXGUSDT) Live Prices (Realtime Sub-Second)
             try:
-                req = urllib.request.Request("https://api.binance.com/api/v3/ticker/price?symbols=%5B%22BTCUSDT%22,%22ETHUSDT%22,%22SOLUSDT%22%5D", headers={'User-Agent': 'TradingTools/2.5.7'})
+                req = urllib.request.Request("https://api.binance.com/api/v3/ticker/price?symbols=%5B%22PAXGUSDT%22,%22BTCUSDT%22,%22ETHUSDT%22,%22SOLUSDT%22%5D", headers={'User-Agent': 'TradingTools/2.5.7'})
                 with urllib.request.urlopen(req, timeout=3) as response:
                     if response.status == 200:
                         data = json.loads(response.read().decode('utf-8'))
                         for item in data:
                             sym = item['symbol']
                             px = float(item['price'])
-                            spread = 0.5 if sym == 'BTCUSDT' else (0.1 if sym == 'ETHUSDT' else 0.02)
-                            LIVE_RATES_CACHE[sym] = {
-                                'symbol': sym,
-                                'bid': round(px, 2),
-                                'ask': round(px + spread, 2),
-                                'close': round(px, 2),
-                                'digits': 2,
-                                'time': now,
-                                'source': 'binance_live'
-                            }
+                            if sym == 'PAXGUSDT':
+                                # Spot Gold OTC Price (ตรงกับ Exness/XM ไม่ใช่ COMEX Futures)
+                                LIVE_RATES_CACHE['XAUUSD'] = {
+                                    'symbol': 'XAUUSD',
+                                    'bid': round(px, 3),
+                                    'ask': round(px + 0.15, 3),
+                                    'close': round(px, 3),
+                                    'digits': 3,
+                                    'time': now,
+                                    'source': 'spot_gold_live'
+                                }
+                            else:
+                                spread = 0.5 if sym == 'BTCUSDT' else (0.1 if sym == 'ETHUSDT' else 0.02)
+                                LIVE_RATES_CACHE[sym] = {
+                                    'symbol': sym,
+                                    'bid': round(px, 2),
+                                    'ask': round(px + spread, 2),
+                                    'close': round(px, 2),
+                                    'digits': 2,
+                                    'time': now,
+                                    'source': 'binance_live'
+                                }
             except Exception:
                 pass
 

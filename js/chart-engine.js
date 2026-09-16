@@ -2249,11 +2249,11 @@ class ChartEngine {
     }
 
     // =========================================================
-    // ระบบดึงราคาตลาดโลกสดตรงจาก Binance WebSocket & Multi-Source
+    // ระบบดึงราคาตลาดโลกสดตรงจาก Binance WebSocket (Spot Gold & Crypto)
     // =========================================================
     initBinanceWebSocket() {
         try {
-            const symbols = ['btcusdt', 'ethusdt', 'solusdt'];
+            const symbols = ['btcusdt', 'ethusdt', 'solusdt', 'paxgusdt'];
             const streams = symbols.map(s => `${s}@ticker`).join('/');
             const wsUrl = `wss://stream.binance.com:9443/ws/${streams}`;
             this.binanceWs = new WebSocket(wsUrl);
@@ -2268,6 +2268,17 @@ class ChartEngine {
                             price: price,
                             time: Date.now()
                         };
+                        // Map PAXG (Physical Gold Spot 1oz) to XAUUSD
+                        if (sym === 'PAXGUSDT') {
+                            this.liveCryptoPrices['XAUUSD'] = {
+                                price: price,
+                                time: Date.now()
+                            };
+                            this.liveCryptoPrices['GOLD'] = {
+                                price: price,
+                                time: Date.now()
+                            };
+                        }
                     }
                 } catch (err) {}
             };
@@ -2290,10 +2301,10 @@ class ChartEngine {
     startLiveTicker() {
         if (this.liveTickerInterval) clearInterval(this.liveTickerInterval);
 
-        // รัน Ticker ทุกๆ 300ms สำหรับส่งผ่านราคา Tick จริงแบบ Real-time ทันที
+        // รัน Ticker ทุกๆ 250ms สำหรับส่งผ่านราคา Tick จริงแบบ Real-time ทันที
         this.liveTickerInterval = setInterval(() => {
             this.tickLiveCandles();
-        }, 300);
+        }, 250);
     }
 
     async tickLiveCandles() {
@@ -2304,7 +2315,7 @@ class ChartEngine {
 
         if (!this.charts || this.charts.length === 0) return;
 
-        // ดึงราคา Realtime ล่าสุดจาก Server API (รองรับทั้ง MT5 และ Public Yahoo Finance / Binance)
+        // ดึงราคา Realtime ล่าสุดจาก Server API (MT5 Broker Quote หรือ Spot Stream)
         let liveRates = null;
         try {
             const resp = await fetch('/api/live-rates', { cache: 'no-store' });
@@ -2334,7 +2345,7 @@ class ChartEngine {
                 if (liveRates[sym]) {
                     rateObj = liveRates[sym];
                 } else if (isGold) {
-                    rateObj = liveRates['XAUUSD'] || liveRates['GOLD'] || liveRates['GOLDm#'] || liveRates['GOLD#'];
+                    rateObj = liveRates['XAUUSD'] || liveRates['GOLD'] || liveRates['GOLDm#'] || liveRates['GOLD#'] || liveRates['XAUUSDm'];
                 } else if (sym.includes('BTC')) {
                     rateObj = liveRates['BTCUSDT'] || liveRates['BTCUSD'] || liveRates['BTCUSD#'];
                 } else if (sym.includes('EUR')) {
@@ -2358,22 +2369,30 @@ class ChartEngine {
                 }
             }
 
-            // 1. ตรวจสอบราคา Crypto จาก Binance Direct WebSocket ก่อน (ความเร็วระดับมิลลิวินาที)
-            const cryptoLive = this.liveCryptoPrices[sym] || (sym.includes('BTC') ? this.liveCryptoPrices['BTCUSDT'] : (sym.includes('ETH') ? this.liveCryptoPrices['ETHUSDT'] : (sym.includes('SOL') ? this.liveCryptoPrices['SOLUSDT'] : null)));
-            if (cryptoLive && (Date.now() - cryptoLive.time < 6000)) {
-                newPrice = Number(cryptoLive.price.toFixed(decimals));
-            } else if (rateObj && (rateObj.bid || rateObj.close)) {
-                // 2. ราคาจริงจาก Server API (MT5 หรือ Public Live Stream)
+            const isMt5Live = rateObj && rateObj.source === 'mt5_live';
+
+            if (isMt5Live && (rateObj.bid || rateObj.close)) {
+                // 1. ถ้า MT5 กำลังเชื่อมต่ออยู่ ใช้ราคาจริงจากโบรกเกอร์ (Exness/XM 1:1) เป็นอันดับหนึ่งทันที!
                 const rawBid = rateObj.bid || rateObj.close;
                 newPrice = Number(rawBid.toFixed(decimals));
             } else {
-                // 3. จำลองการขยับยามฉุกเฉิน
-                let lastPrice = this.getCurrentPrice(sym);
-                if (!lastPrice) {
-                    lastPrice = isGold ? 4311.000 : (isForex ? 1.15360 : 75800.00);
+                // 2. ถ้า MT5 ไม่ได้เปิด: ใช้ราคา Spot Direct WebSocket จาก Binance (Crypto & Spot Gold PAXG)
+                const wsLive = this.liveCryptoPrices[sym] || (isGold ? this.liveCryptoPrices['XAUUSD'] : (sym.includes('BTC') ? this.liveCryptoPrices['BTCUSDT'] : (sym.includes('ETH') ? this.liveCryptoPrices['ETHUSDT'] : (sym.includes('SOL') ? this.liveCryptoPrices['SOLUSDT'] : null))));
+                if (wsLive && (Date.now() - wsLive.time < 6000)) {
+                    newPrice = Number(wsLive.price.toFixed(decimals));
+                } else if (rateObj && (rateObj.bid || rateObj.close)) {
+                    // 3. ใช้ราคาจาก Server API Public Stream
+                    const rawBid = rateObj.bid || rateObj.close;
+                    newPrice = Number(rawBid.toFixed(decimals));
+                } else {
+                    // 4. จำลองการขยับยามฉุกเฉิน
+                    let lastPrice = this.getCurrentPrice(sym);
+                    if (!lastPrice) {
+                        lastPrice = isGold ? 4347.000 : (isForex ? 1.15360 : 75800.00);
+                    }
+                    const delta = isGold ? (Math.random() - 0.49) * 0.10 : (isForex ? (Math.random() - 0.49) * 0.00015 : (Math.random() - 0.49) * 16.0);
+                    newPrice = Number((lastPrice + delta).toFixed(decimals));
                 }
-                const delta = isGold ? (Math.random() - 0.49) * 0.12 : (isForex ? (Math.random() - 0.49) * 0.00015 : (Math.random() - 0.49) * 16.0);
-                newPrice = Number((lastPrice + delta).toFixed(decimals));
             }
 
             ticks[sym] = { price: newPrice, volume: tickVol, decimals };
