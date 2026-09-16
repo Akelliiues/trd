@@ -1,0 +1,2153 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#13161f">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="TradingTools">
+    <meta name="description"
+        content="TradingTools Professional Workstation - Live MT5 Charts, Multi-Chart Grid, Volume Profile, Trade Replay & Journal">
+    <title>TradingTools Workstation & Trade Journal</title>
+    <link rel="manifest" href="manifest.json?v=2.5.7">
+    <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <link rel="stylesheet" href="styles.css?v=2.5.7">
+    <!-- Local Standalone Chart Engine (Ultra-fast & Offline ready) -->
+    <script src="js/lightweight-charts.js?v=2.5.7"></script>
+    <!-- Anti-Zoom & PWA Installed State Detection -->
+    <script>
+        // Prevent Whole-Page Zoom / Scale Distortion
+        (function() {
+            // 1. Prevent Ctrl + Wheel / Cmd + Wheel / Touchpad Pinch Zoom
+            window.addEventListener('wheel', function(e) {
+                if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                }
+            }, { passive: false });
+
+            // 2. Prevent Keyboard Zoom Shortcuts (Ctrl/Cmd +, -, 0, =)
+            window.addEventListener('keydown', function(e) {
+                if ((e.ctrlKey || e.metaKey) && (
+                    e.key === '+' || e.key === '-' || e.key === '=' || e.key === '_' || e.key === '0' ||
+                    e.code === 'NumpadAdd' || e.code === 'NumpadSubtract' || e.code === 'Equal' || e.code === 'Minus' ||
+                    e.code === 'Digit0' || e.code === 'Numpad0'
+                )) {
+                    e.preventDefault();
+                }
+            });
+
+            // 3. Prevent Safari / iOS Gesture Events
+            document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
+            document.addEventListener('gesturechange', function(e) { e.preventDefault(); });
+            document.addEventListener('gestureend', function(e) { e.preventDefault(); });
+
+            // 4. Prevent Double-Tap to Zoom on Mobile
+            var lastTouchEnd = 0;
+            document.addEventListener('touchend', function(e) {
+                var now = Date.now();
+                if (now - lastTouchEnd <= 300) {
+                    if (!['INPUT', 'TEXTAREA', 'SELECT', 'OPTION'].includes(e.target.tagName)) {
+                        e.preventDefault();
+                    }
+                }
+                lastTouchEnd = now;
+            }, { passive: false });
+        })();
+
+        // Early PWA Installed State Detection (Instantly hides install button on installed devices)
+        try {
+            if (window.matchMedia('(display-mode: standalone)').matches ||
+                window.matchMedia('(display-mode: fullscreen)').matches ||
+                window.matchMedia('(display-mode: minimal-ui)').matches ||
+                (window.navigator.standalone === true) ||
+                (document.referrer && document.referrer.startsWith('android-app://')) ||
+                (localStorage.getItem('tradingtools_pwa_installed') === 'true')) {
+                document.documentElement.classList.add('app-is-installed');
+            }
+        } catch (e) {}
+    </script>
+</head>
+
+<body>
+
+    <!-- 1. TOPBAR NAVIGATION -->
+    <header class="topbar">
+        <div class="topbar-left">
+            <div class="brand-logo" title="TradingTools Workstation Pro">
+                <svg class="svg-icon brand-svg" viewBox="0 0 24 24">
+                    <path d="M3 17l6-6 4 4 8-8M14 7h7v7" />
+                </svg>
+                <span>TradingTools</span>
+                <span class="brand-badge">PRO</span>
+            </div>
+
+            <div class="topbar-sep"></div>
+
+            <!-- Modern Pro Layout Selector (Glassmorphic Dropdown & Visual Grid Previews) -->
+            <div class="custom-layout-container" id="custom-layout-container">
+                <button class="tb-btn tb-layout-trigger-btn" id="tb-layout-btn" onclick="window.app.toggleLayoutDropdown(event)"
+                    title="เลือกการจัดวางชาร์ต (Multi-Chart Grid Layout)">
+                    <div class="layout-grid-preview tb-layout-visual-icon lp-2x2" id="tb-layout-visual-icon">
+                        <div class="lp-cell"></div>
+                        <div class="lp-cell"></div>
+                        <div class="lp-cell"></div>
+                        <div class="lp-cell"></div>
+                    </div>
+                    <span class="layout-btn-chevron" id="tb-layout-chevron">▾</span>
+                </button>
+
+                <!-- Floating Glassmorphic Layout Menu -->
+                <div class="custom-layout-menu" id="custom-layout-menu">
+                    <div class="layout-menu-header">
+                        <div class="layout-target-label">
+                            <span class="layout-dot-indicator"></span>
+                            <span>เลือกการจัดวางชาร์ต (Grid Layout)</span>
+                        </div>
+                    </div>
+
+                    <div class="layout-cards-list">
+                        <!-- 1x1 -->
+                        <button type="button" class="layout-card-item" data-layout="1x1" onclick="window.app.selectLayoutOption('1x1')">
+                            <div class="layout-grid-preview lp-1x1">
+                                <div class="lp-cell"></div>
+                            </div>
+                            <div class="layout-item-content">
+                                <div class="layout-item-title">
+                                    <span class="layout-name">1 ชาร์ต</span>
+                                    <span class="layout-code">1x1</span>
+                                </div>
+                                <div class="layout-item-sub">เน้นวิเคราะห์ชาร์ตเดี่ยวเต็มจอความละเอียดสูง</div>
+                            </div>
+                        </button>
+
+                        <!-- 2x1 -->
+                        <button type="button" class="layout-card-item" data-layout="2x1" onclick="window.app.selectLayoutOption('2x1')">
+                            <div class="layout-grid-preview lp-2x1">
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                            </div>
+                            <div class="layout-item-content">
+                                <div class="layout-item-title">
+                                    <span class="layout-name">2 ชาร์ต</span>
+                                    <span class="layout-code">2x1</span>
+                                </div>
+                                <div class="layout-item-sub">เปรียบเทียบ 2 ไทม์เฟรมคู่ขนาน (Dual View)</div>
+                            </div>
+                        </button>
+
+                        <!-- 2x2 -->
+                        <button type="button" class="layout-card-item active" data-layout="2x2" onclick="window.app.selectLayoutOption('2x2')">
+                            <div class="layout-grid-preview lp-2x2">
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                            </div>
+                            <div class="layout-item-content">
+                                <div class="layout-item-title">
+                                    <span class="layout-name">4 ชาร์ต</span>
+                                    <span class="layout-code">2x2</span>
+                                    <span class="layout-badge-popular">ยอดนิยม</span>
+                                </div>
+                                <div class="layout-item-sub">ตารางมาตรฐาน 4 จอสำหรับเทรด Multi-TF Pro</div>
+                            </div>
+                        </button>
+
+                        <!-- 4x2 -->
+                        <button type="button" class="layout-card-item" data-layout="4x2" onclick="window.app.selectLayoutOption('4x2')">
+                            <div class="layout-grid-preview lp-4x2">
+                                <div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div>
+                                <div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div>
+                            </div>
+                            <div class="layout-item-content">
+                                <div class="layout-item-title">
+                                    <span class="layout-name">8 ชาร์ต</span>
+                                    <span class="layout-code">4x2</span>
+                                </div>
+                                <div class="layout-item-sub">มอนิเตอร์ 8 ชาร์ตรอบตลาดครอบคลุมทุกสไตล์</div>
+                            </div>
+                        </button>
+
+                        <!-- 4x4 -->
+                        <button type="button" class="layout-card-item" data-layout="4x4" onclick="window.app.selectLayoutOption('4x4')">
+                            <div class="layout-grid-preview lp-4x4">
+                                <div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div>
+                                <div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div>
+                                <div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div>
+                                <div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div>
+                            </div>
+                            <div class="layout-item-content">
+                                <div class="layout-item-title">
+                                    <span class="layout-name">16 ชาร์ต</span>
+                                    <span class="layout-code">4x4</span>
+                                    <span class="layout-badge-matrix">Matrix</span>
+                                </div>
+                                <div class="layout-item-sub">Full Matrix สูงสุด 16 หน้าต่างเทรดระดับสถาบัน</div>
+                            </div>
+                        </button>
+
+                        <!-- Section Header: Asymmetric Pro Layouts -->
+                        <div class="layout-group-title" style="margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 6px;">
+                            ✨ เลย์เอาท์ไม่สมมาตร (Asymmetric Pro)
+                        </div>
+
+                        <!-- 1L-2R -->
+                        <button type="button" class="layout-card-item" data-layout="1L-2R" onclick="window.app.selectLayoutOption('1L-2R')">
+                            <div class="layout-grid-preview lp-1L-2R">
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                            </div>
+                            <div class="layout-item-content">
+                                <div class="layout-item-title">
+                                    <span class="layout-name">ซ้าย 1 ขวา 2</span>
+                                    <span class="layout-code">1L-2R</span>
+                                    <span class="layout-badge-popular" style="background: rgba(56,189,248,0.15); color: #38bdf8; border-color: rgba(56,189,248,0.3);">โปรฮิต</span>
+                                </div>
+                                <div class="layout-item-sub">ซ้ายจอหลักวิเคราะห์ลึก ขวา 2 ไทม์เฟรมบนล่าง</div>
+                            </div>
+                        </button>
+
+                        <!-- 2L-1R -->
+                        <button type="button" class="layout-card-item" data-layout="2L-1R" onclick="window.app.selectLayoutOption('2L-1R')">
+                            <div class="layout-grid-preview lp-2L-1R">
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                            </div>
+                            <div class="layout-item-content">
+                                <div class="layout-item-title">
+                                    <span class="layout-name">ซ้าย 2 ขวา 1</span>
+                                    <span class="layout-code">2L-1R</span>
+                                </div>
+                                <div class="layout-item-sub">ซ้าย 2 จอย่อยบนล่าง ขวาจอหลักสำหรับการเทรด</div>
+                            </div>
+                        </button>
+
+                        <!-- 1T-2B -->
+                        <button type="button" class="layout-card-item" data-layout="1T-2B" onclick="window.app.selectLayoutOption('1T-2B')">
+                            <div class="layout-grid-preview lp-1T-2B">
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                            </div>
+                            <div class="layout-item-content">
+                                <div class="layout-item-title">
+                                    <span class="layout-name">บน 1 ล่าง 2</span>
+                                    <span class="layout-code">1T-2B</span>
+                                </div>
+                                <div class="layout-item-sub">บนจอพาโนรามาแนวนอน ล่าง 2 จอเปรียบเทียบ</div>
+                            </div>
+                        </button>
+
+                        <!-- 2T-1B -->
+                        <button type="button" class="layout-card-item" data-layout="2T-1B" onclick="window.app.selectLayoutOption('2T-1B')">
+                            <div class="layout-grid-preview lp-2T-1B">
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                            </div>
+                            <div class="layout-item-content">
+                                <div class="layout-item-title">
+                                    <span class="layout-name">บน 2 ล่าง 1</span>
+                                    <span class="layout-code">2T-1B</span>
+                                </div>
+                                <div class="layout-item-sub">บน 2 จอซ้ายขวา ล่างจอแนวนอนกว้าง</div>
+                            </div>
+                        </button>
+
+                        <!-- 1L-3R -->
+                        <button type="button" class="layout-card-item" data-layout="1L-3R" onclick="window.app.selectLayoutOption('1L-3R')">
+                            <div class="layout-grid-preview lp-1L-3R">
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                            </div>
+                            <div class="layout-item-content">
+                                <div class="layout-item-title">
+                                    <span class="layout-name">ซ้าย 1 ขวา 3</span>
+                                    <span class="layout-code">1L-3R</span>
+                                    <span class="layout-badge-matrix">Action</span>
+                                </div>
+                                <div class="layout-item-sub">จอเทรดหลัก 70% ขวา 3 ไทม์เฟรมสำหรับมอนิเตอร์</div>
+                            </div>
+                        </button>
+
+                        <!-- 3L-1R -->
+                        <button type="button" class="layout-card-item" data-layout="3L-1R" onclick="window.app.selectLayoutOption('3L-1R')">
+                            <div class="layout-grid-preview lp-3L-1R">
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                            </div>
+                            <div class="layout-item-content">
+                                <div class="layout-item-title">
+                                    <span class="layout-name">ซ้าย 3 ขวา 1</span>
+                                    <span class="layout-code">3L-1R</span>
+                                    <span class="layout-badge-matrix">Action</span>
+                                </div>
+                                <div class="layout-item-sub">ซ้าย 3 ไทม์เฟรมมอนิเตอร์ ขวาจอเทรดหลัก 70%</div>
+                            </div>
+                        </button>
+
+                        <!-- 3x1 -->
+                        <button type="button" class="layout-card-item" data-layout="3x1" onclick="window.app.selectLayoutOption('3x1')">
+                            <div class="layout-grid-preview lp-3x1">
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                            </div>
+                            <div class="layout-item-content">
+                                <div class="layout-item-title">
+                                    <span class="layout-name">3 ชาร์ตเรียง</span>
+                                    <span class="layout-code">3x1</span>
+                                </div>
+                                <div class="layout-item-sub">เรียงแถวแนวนอน 3 ชาร์ตเปรียบเทียบเชิงลึก</div>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="topbar-sep"></div>
+
+            <!-- Modern Pro Timeframe Selector (Glassmorphic Dropdown & Quick Chips) -->
+            <div class="custom-tf-container" id="custom-tf-container">
+                <button class="tb-btn tb-tf-trigger-btn" id="tb-timeframe-btn" onclick="window.app.toggleTimeframeDropdown(event)"
+                    title="เลือก Timeframe และรูปแบบแท่งกราฟ (คลิกเพื่อเปิดแผงเลือกด่วน)">
+                    <svg class="svg-icon" style="color: #38bdf8;" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <span class="tf-btn-badge" id="tb-current-tf-badge">15m</span>
+                    <span class="tf-btn-chevron" id="tb-tf-chevron">▾</span>
+                </button>
+
+                <!-- Floating Glassmorphic Dropdown Menu -->
+                <div class="custom-tf-menu" id="custom-tf-menu">
+                    <!-- Scope Header -->
+                    <div class="tf-menu-header">
+                        <div class="tf-target-label">
+                            <span class="tf-dot-indicator"></span>
+                            <span id="tf-menu-target-name">ชาร์ตที่ 1: XAUUSD (15m)</span>
+                        </div>
+                        <div class="tf-scope-switcher">
+                            <button type="button" class="tf-scope-btn active" id="tf-menu-scope-active" onclick="window.app.setTfDropdownScope(false, event)">ชาร์ตนี้</button>
+                            <button type="button" class="tf-scope-btn" id="tf-menu-scope-all" onclick="window.app.setTfDropdownScope(true, event)">ทุกชาร์ต</button>
+                        </div>
+                    </div>
+
+                    <!-- 1. Minutes Section -->
+                    <div class="tf-menu-section">
+                        <div class="tf-section-title">⚡ นาที (Minutes)</div>
+                        <div class="tf-chips-grid">
+                            <button type="button" class="tf-menu-chip" data-tf="1m" onclick="window.app.selectTimeframeMenu('1m')">1m</button>
+                            <button type="button" class="tf-menu-chip" data-tf="3m" onclick="window.app.selectTimeframeMenu('3m')">3m</button>
+                            <button type="button" class="tf-menu-chip" data-tf="5m" onclick="window.app.selectTimeframeMenu('5m')">5m</button>
+                            <button type="button" class="tf-menu-chip" data-tf="15m" onclick="window.app.selectTimeframeMenu('15m')">15m</button>
+                            <button type="button" class="tf-menu-chip" data-tf="30m" onclick="window.app.selectTimeframeMenu('30m')">30m</button>
+                            <button type="button" class="tf-menu-chip" data-tf="45m" onclick="window.app.selectTimeframeMenu('45m')">45m</button>
+                        </div>
+                    </div>
+
+                    <!-- 2. Hours & Days Section -->
+                    <div class="tf-menu-section">
+                        <div class="tf-section-title">⏰ ชั่วโมง & วัน (Hours & Higher TF)</div>
+                        <div class="tf-chips-grid">
+                            <button type="button" class="tf-menu-chip" data-tf="1h" onclick="window.app.selectTimeframeMenu('1h')">1h</button>
+                            <button type="button" class="tf-menu-chip" data-tf="2h" onclick="window.app.selectTimeframeMenu('2h')">2h</button>
+                            <button type="button" class="tf-menu-chip" data-tf="4h" onclick="window.app.selectTimeframeMenu('4h')">4h</button>
+                            <button type="button" class="tf-menu-chip" data-tf="1d" onclick="window.app.selectTimeframeMenu('1d')">1D</button>
+                            <button type="button" class="tf-menu-chip" data-tf="1w" onclick="window.app.selectTimeframeMenu('1w')">1W</button>
+                            <button type="button" class="tf-menu-chip" data-tf="1M" onclick="window.app.selectTimeframeMenu('1M')">1M</button>
+                        </div>
+                    </div>
+
+                    <!-- 3. Pro Noise-Filter & Order Flow Bars -->
+                    <div class="tf-menu-section">
+                        <div class="tf-section-title">📊 แท่งกราฟพิเศษ (Price Action & Order Flow)</div>
+                        <div class="tf-pro-cards">
+                            <!-- Range Bar Card -->
+                            <div class="tf-pro-card">
+                                <div class="tf-pro-card-header">
+                                    <span class="tf-pro-badge range-badge">📐 Range Bar</span>
+                                    <span class="tf-pro-subtext">ตัดสัญญาณหลอกตามระยะราคา</span>
+                                </div>
+                                <div class="tf-pro-options">
+                                    <button type="button" class="tf-pro-chip" data-tf="R-1" onclick="window.app.applyQuickRange(1.0)">R-1</button>
+                                    <button type="button" class="tf-pro-chip" data-tf="R-2" onclick="window.app.applyQuickRange(2.0)">R-2</button>
+                                    <button type="button" class="tf-pro-chip" data-tf="R-5" onclick="window.app.applyQuickRange(5.0)">R-5</button>
+                                    <button type="button" class="tf-pro-chip tf-pro-more" onclick="window.app.openRangeBarModal(); window.app.closeTimeframeDropdown();">⚙️ เพิ่มเติม...</button>
+                                </div>
+                            </div>
+
+                            <!-- Tick Bar Card -->
+                            <div class="tf-pro-card">
+                                <div class="tf-pro-card-header">
+                                    <span class="tf-pro-badge tick-badge">⚡ Tick Bar</span>
+                                    <span class="tf-pro-subtext">แท่งตามจำนวนคำสั่งซื้อขาย</span>
+                                </div>
+                                <div class="tf-pro-options">
+                                    <button type="button" class="tf-pro-chip" data-tf="T-100" onclick="window.app.applyQuickTick(100)">100T</button>
+                                    <button type="button" class="tf-pro-chip" data-tf="T-250" onclick="window.app.applyQuickTick(250)">250T</button>
+                                    <button type="button" class="tf-pro-chip" data-tf="T-500" onclick="window.app.applyQuickTick(500)">500T</button>
+                                    <button type="button" class="tf-pro-chip tf-pro-more" onclick="window.app.openTickBarModal(); window.app.closeTimeframeDropdown();">⚙️ เพิ่มเติม...</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 4. Quick Custom Minutes Input & Full Manager -->
+                    <div class="tf-menu-footer">
+                        <div class="tf-quick-custom-bar">
+                            <span style="color: var(--text-secondary); font-size: 11px; font-weight: 600;">⚙️ ระบุนาที:</span>
+                            <div class="tf-quick-input-group">
+                                <input type="number" id="tf-menu-custom-min" min="1" max="1440" value="7" placeholder="เช่น 7">
+                                <button type="button" class="btn-quick-min-apply" onclick="window.app.applyMenuCustomMinutes()">ปรับใช้</button>
+                            </div>
+                        </div>
+                        <button type="button" class="btn-tf-open-full-modal" onclick="window.app.openTimeframePicker(); window.app.closeTimeframeDropdown();" title="เปิดหน้าต่างตั้งค่า Timeframe แบบเต็ม">
+                            📋 เปิดแผงควบคุม Timeframe แบบละเอียด...
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="topbar-sep"></div>
+
+            <!-- Indicators & Overlays -->
+            <button class="tb-btn" onclick="window.app.openIndicatorModal()"
+                title="เพิ่มอินดิเคเตอร์ หรือ Indicator on Indicator">
+                <span style="font-weight: 700; color: #38bdf8; font-family: serif; font-style: italic;">fx</span>
+            </button>
+            <button class="tb-btn active" id="btn-toggle-vp" onclick="window.app.toggleVP()"
+                title="เปิด/ปิด Volume Profile แนวนอน (VPVR)">
+                <svg class="svg-icon" viewBox="0 0 24 24">
+                    <path d="M3 3v18h18M7 16h4M7 12h8M7 8h12" />
+                </svg>
+                <span>VP</span>
+            </button>
+            <button class="tb-btn active" id="btn-toggle-crosshair" onclick="window.app.toggleCrosshairSync()"
+                title="ซิงค์เคอร์เซอร์ข้ามทุกชาร์ต (Crosshair Sync)">
+                <svg class="svg-icon" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 3v18M3 12h18" />
+                </svg>
+                <span>Sync</span>
+            </button>
+            <!-- Consolidated Tools Menu Dropdown (All Drawing & Measurement Tools) -->
+            <div class="custom-dropdown-container custom-tools-container custom-draw-container" id="custom-tools-container">
+                <button type="button" class="tb-btn tb-tools-trigger-btn" id="btn-toggle-tools-menu" onclick="window.app.toggleToolsMenu(event)"
+                    title="ชุดเครื่องมือวิเคราะห์ & วาดกราฟทั้งหมด (วัดระยะ, Fibo, เทรนด์ไลน์, แนวนอน, โซน ฯลฯ)">
+                    <svg class="svg-icon" viewBox="0 0 24 24" style="color: #38bdf8;">
+                        <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+                    </svg>
+                    <span id="tb-current-tools-label">เครื่องมือ</span>
+                    <span class="tb-dropdown-arrow">▾</span>
+                </button>
+
+                <!-- Floating Glassmorphic Tools Palette (Only shown when called/clicked) -->
+                <div class="custom-tools-palette custom-draw-menu" id="custom-tools-palette">
+                    <div class="tools-palette-header draw-menu-header">
+                        <div class="tools-palette-title-group">
+                            <span class="tools-dot-indicator"></span>
+                            <span class="tools-palette-title draw-menu-title">🛠️ ชุดเครื่องมือวิเคราะห์ & วาดกราฟ</span>
+                        </div>
+                        <button type="button" class="tools-palette-clear-btn draw-menu-clear-btn" onclick="window.app.clearCurrentChartDrawings()" title="ลบภาพวาดและเส้นทั้งหมดบนชาร์ตนี้">
+                            🗑️ ล้างทั้งหมด
+                        </button>
+                    </div>
+
+                    <!-- Section 1: ไม้บรรทัด & คำนวณระดับ (Measurement & Calculations) -->
+                    <div class="tools-palette-section">
+                        <div class="tools-section-title">📐 การวัดระยะ & ระดับราคา (Measure & Levels)</div>
+                        <div class="tools-section-grid">
+                            <!-- Measure Tool -->
+                            <button type="button" class="tool-palette-card" id="btn-toggle-measure" onclick="window.app.toggleMeasureFromPalette()">
+                                <div class="tool-card-icon measure-icon-box">
+                                    <svg viewBox="0 0 24 24">
+                                        <path d="M21.3 15.3l-6.6 6.6a1 1 0 01-1.4 0l-11-11a1 1 0 010-1.4l6.6-6.6a1 1 0 011.4 0l11 11a1 1 0 010 1.4zM7.5 4.5l2 2m-1 3l3 3m-1 3l2 2m-1 3l3 3" />
+                                    </svg>
+                                </div>
+                                <div class="tool-card-info">
+                                    <div class="tool-card-name-row">
+                                        <span class="tool-card-name">ไม้บรรทัดวัดระยะ</span>
+                                        <span class="tool-card-hotkey">Alt+M</span>
+                                    </div>
+                                    <div class="tool-card-desc">วัดจำนวนจุด, Pips, แท่งเทียน และเวลา</div>
+                                </div>
+                            </button>
+
+                            <!-- Fibo Retracement -->
+                            <button type="button" class="tool-palette-card" id="btn-toggle-fibo" onclick="window.app.toggleFiboFromPalette()">
+                                <div class="tool-card-icon fibo-icon-box">
+                                    <svg viewBox="0 0 24 24">
+                                        <path d="M3 4h18M3 8h14M3 12h18M3 16h10M3 20h18M7 4v16" />
+                                    </svg>
+                                </div>
+                                <div class="tool-card-info">
+                                    <div class="tool-card-name-row">
+                                        <span class="tool-card-name">Fibonacci Retracement</span>
+                                        <span class="tool-card-hotkey">Alt+F</span>
+                                    </div>
+                                    <div class="tool-card-desc">ระดับทองคำ 61.8%, 50%, 38.2%, 23.6%</div>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Section 2: เส้นแนวโน้ม & ระดับราคา (Lines & Rays) -->
+                    <div class="tools-palette-section">
+                        <div class="tools-section-title">📈 เส้นแนวโน้ม & ระดับราคา (Lines & Levels)</div>
+                        <div class="tools-section-grid">
+                            <!-- Trendline -->
+                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-trendline" data-tool="trendline" onclick="window.app.selectToolFromPalette('trendline')">
+                                <div class="tool-card-icon">
+                                    <svg viewBox="0 0 24 24">
+                                        <circle cx="5" cy="19" r="2.5" />
+                                        <circle cx="19" cy="5" r="2.5" />
+                                        <line x1="7" y1="17" x2="17" y2="7" />
+                                    </svg>
+                                </div>
+                                <div class="tool-card-info">
+                                    <div class="tool-card-name-row">
+                                        <span class="tool-card-name">เส้นแนวโน้ม (Trendline)</span>
+                                    </div>
+                                    <div class="tool-card-desc">คลิกจุด A แล้วลากหรือคลิกจุด B ล็อคพิกัดราคา</div>
+                                </div>
+                            </button>
+
+                            <!-- Horizontal Line -->
+                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-horzline" data-tool="horzline" onclick="window.app.selectToolFromPalette('horzline')">
+                                <div class="tool-card-icon">
+                                    <svg viewBox="0 0 24 24">
+                                        <line x1="2" y1="12" x2="22" y2="12" />
+                                        <circle cx="12" cy="12" r="2.5" />
+                                    </svg>
+                                </div>
+                                <div class="tool-card-info">
+                                    <div class="tool-card-name-row">
+                                        <span class="tool-card-name">เส้นแนวนอน (Horizontal Line)</span>
+                                    </div>
+                                    <div class="tool-card-desc">คลิกจุดเดียววางแนวรับ-แนวต้านตลอดชาร์ต</div>
+                                </div>
+                            </button>
+
+                            <!-- Horizontal Ray -->
+                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-horzray" data-tool="horzray" onclick="window.app.selectToolFromPalette('horzray')">
+                                <div class="tool-card-icon">
+                                    <svg viewBox="0 0 24 24">
+                                        <circle cx="6" cy="12" r="2.5" />
+                                        <line x1="8.5" y1="12" x2="22" y2="12" />
+                                    </svg>
+                                </div>
+                                <div class="tool-card-info">
+                                    <div class="tool-card-name-row">
+                                        <span class="tool-card-name">เรย์แนวนอน (Horizontal Ray)</span>
+                                    </div>
+                                    <div class="tool-card-desc">ยิงเส้นระดับราคาจากแท่งเทียนไปทางขวา</div>
+                                </div>
+                            </button>
+
+                            <!-- Vertical Line -->
+                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-vertline" data-tool="vertline" onclick="window.app.selectToolFromPalette('vertline')">
+                                <div class="tool-card-icon">
+                                    <svg viewBox="0 0 24 24">
+                                        <line x1="12" y1="2" x2="12" y2="22" />
+                                        <circle cx="12" cy="12" r="2.5" />
+                                    </svg>
+                                </div>
+                                <div class="tool-card-info">
+                                    <div class="tool-card-name-row">
+                                        <span class="tool-card-name">เส้นแนวตั้ง (Vertical Line)</span>
+                                    </div>
+                                    <div class="tool-card-desc">มาร์คช่วงเวลา ข่าว หรือแท่งเทียนสำคัญ</div>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Section 3: โซนราคา & ข้อความ (Zones & Notes) -->
+                    <div class="tools-palette-section">
+                        <div class="tools-section-title">📦 โซนราคา & ข้อความ (Zones & Notes)</div>
+                        <div class="tools-section-grid">
+                            <!-- Rectangle -->
+                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-rectangle" data-tool="rectangle" onclick="window.app.selectToolFromPalette('rectangle')">
+                                <div class="tool-card-icon">
+                                    <svg viewBox="0 0 24 24">
+                                        <rect x="4" y="5" width="16" height="14" rx="2" />
+                                        <circle cx="4" cy="5" r="1.5" />
+                                        <circle cx="20" cy="19" r="1.5" />
+                                    </svg>
+                                </div>
+                                <div class="tool-card-info">
+                                    <div class="tool-card-name-row">
+                                        <span class="tool-card-name">Rectangle (กล่องโซน)</span>
+                                    </div>
+                                    <div class="tool-card-desc">กล่องไฮไลท์ Supply / Demand / Order Block</div>
+                                </div>
+                            </button>
+
+                            <!-- Path -->
+                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-path" data-tool="path" onclick="window.app.selectToolFromPalette('path')">
+                                <div class="tool-card-icon">
+                                    <svg viewBox="0 0 24 24">
+                                        <circle cx="4" cy="16" r="2" />
+                                        <circle cx="11" cy="8" r="2" />
+                                        <line x1="5.5" y1="14.5" x2="9.5" y2="9.5" />
+                                        <line x1="12.5" y1="9" x2="18.5" y2="15" />
+                                        <circle cx="19" cy="16" r="2" />
+                                        <path d="M16 16l4 0l0-4" />
+                                    </svg>
+                                </div>
+                                <div class="tool-card-info">
+                                    <div class="tool-card-name-row">
+                                        <span class="tool-card-name">เส้นทาง (Path Arrow)</span>
+                                    </div>
+                                    <div class="tool-card-desc">วาดลูกศรจำลองทิศทางราคาล่วงหน้า</div>
+                                </div>
+                            </button>
+
+                            <!-- Text Note -->
+                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-text" data-tool="text" onclick="window.app.selectToolFromPalette('text')">
+                                <div class="tool-card-icon">
+                                    <svg viewBox="0 0 24 24">
+                                        <path d="M4 7V4h16v3M9 20h6M12 4v16" />
+                                    </svg>
+                                </div>
+                                <div class="tool-card-info">
+                                    <div class="tool-card-name-row">
+                                        <span class="tool-card-name">ข้อความ (Text Annotation)</span>
+                                    </div>
+                                    <div class="tool-card-desc">พิมพ์บันทึกข้อความติดพิกัดแท่งเทียน</div>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="tools-palette-footer draw-menu-footer">
+                        <span>💡 กด <b>Esc</b> ยกเลิกเครื่องมือ | คลิกที่เส้นแล้วกด <b>Delete</b> เพื่อลบ</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="topbar-right">
+            <!-- Auto-Scroll / Lock Latest Bar Trigger -->
+            <button class="tb-btn tb-btn-autoscroll active" id="btn-toggle-autoscroll" onclick="window.app.toggleAutoScroll()"
+                title="ล็อคกราฟแท่งสุดท้ายให้อยู่ในจอเสมอ (AutoScroll ทุก Timeframe)">
+                <svg class="svg-icon autoscroll-svg" viewBox="0 0 24 24" style="color: #38bdf8;">
+                    <polyline points="13 17 18 12 13 7" />
+                    <polyline points="6 17 11 12 6 7" />
+                    <line x1="21" y1="6" x2="21" y2="18" />
+                </svg>
+                <span>AutoScroll</span>
+                <span class="autoscroll-dot"></span>
+            </button>
+
+            <!-- Bar Replay & Strategy Backtest Trigger -->
+            <button class="tb-btn tb-btn-replay" id="btn-replay-mode" onclick="window.app.startReplayMode()"
+                title="โหมดตัดกราฟและซ้อมเทรดกลยุทธ์ (Bar Replay & Backtest)">
+                <svg class="svg-icon" viewBox="0 0 24 24">
+                    <circle cx="6" cy="6" r="3" />
+                    <circle cx="6" cy="18" r="3" />
+                    <path d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12" />
+                </svg>
+                <span>Replay</span>
+            </button>
+
+            <!-- Display Mode (Full-Immersion Screen) Trigger -->
+            <button class="tb-btn tb-btn-display" id="btn-display-mode" onclick="window.app.toggleDisplayMode()"
+                title="Display Mode (แสดงผลกราฟแบบเต็มจอ ตัดเมนูทั้งหมดออกเพื่อให้มีพื้นที่ดูกราฟสูงสุด พร้อม HUD ข้อมูลบนชาร์ต)">
+                <svg class="svg-icon" viewBox="0 0 24 24">
+                    <path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" />
+                </svg>
+                <span>Display Mode</span>
+            </button>
+
+            <!-- Theme Switcher (Neumorphic Minimalist Toggle) -->
+            <button class="tb-btn tb-btn-theme" id="btn-theme-toggle" onclick="window.app.toggleTheme()"
+                title="สลับโหมดสว่าง / โหมดมืด (Light / Dark Mode)">
+                <svg class="svg-icon theme-icon-sun" id="theme-icon-sun" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="4" />
+                    <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+                </svg>
+                <svg class="svg-icon theme-icon-moon" id="theme-icon-moon" viewBox="0 0 24 24" style="display: none;">
+                    <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+                </svg>
+            </button>
+
+            <!-- Hidden for now: Journal & AI Coach buttons (เปิดใช้งานได้เมื่อต้องการ) -->
+            <button class="tb-btn" id="btn-open-journal" onclick="window.app.openJournalModal()" style="display: none;"
+                title="ปฏิทินบันทึกเทรดและสถิติภาพรวม (Trade Journal & Calendar)">
+                <svg class="svg-icon" viewBox="0 0 24 24">
+                    <rect x="3" y="4" width="18" height="18" rx="2" />
+                    <path d="M16 2v4M8 2v4M3 10h18" />
+                </svg>
+                <span>Journal</span>
+            </button>
+            <button class="tb-btn tb-btn-primary" id="btn-open-ai" onclick="window.app.openAICoach()" style="display: none;"
+                title="AI Trading Coach (วิเคราะห์จิตวิทยาและพฤติกรรมเทรด)">
+                <svg class="svg-icon" viewBox="0 0 24 24">
+                    <polygon
+                        points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                </svg>
+                <span>AI</span>
+            </button>
+
+            <div class="topbar-sep"></div>
+
+            <!-- Mobile / Tablet / Desktop PWA Install Button -->
+            <button class="tb-btn tb-btn-install" id="btn-install-pwa" onclick="window.app.promptInstallPWA()"
+                title="ติดตั้งแอปบนมือถือ / iPad / Tablet / PC (Web App)">
+                <svg class="svg-icon" viewBox="0 0 24 24">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                </svg>
+                <span>ติดตั้งแอป</span>
+            </button>
+
+            <!-- Sidebar Toggle Button -->
+            <button class="tb-btn active tb-icon-btn" id="btn-toggle-sidebar" onclick="window.app.toggleSidebar()"
+                title="ยุบ/ขยายแถบด้านข้าง (Sidebar)">
+                <svg class="svg-icon" viewBox="0 0 24 24">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <path d="M15 3v18" />
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- 2. MAIN WORKSPACE -->
+    <main class="workspace">
+        <!-- Chart Grid Area (1, 2, 4, 8, 16 Charts) -->
+        <section class="chart-area">
+            <div id="chart-grid-container" class="chart-grid layout-2x2">
+                <!-- Chart Cells rendered dynamically by ChartEngine -->
+            </div>
+
+            <!-- FLOATING BAR REPLAY & BACKTEST CONTROLLER -->
+            <div class="replay-toolbar" id="replay-toolbar">
+                <div class="replay-ctrl-group">
+                    <button class="replay-btn cut-active" id="btn-cut-bar" onclick="window.app.cutBar()"
+                        title="คลิกแท่งเทียนบนกราฟเพื่อตัดราคาอนาคต">
+                        <svg class="svg-icon" viewBox="0 0 24 24">
+                            <circle cx="6" cy="6" r="3" />
+                            <circle cx="6" cy="18" r="3" />
+                            <path d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12" />
+                        </svg>
+                    </button>
+                    <button class="replay-btn" onclick="window.app.stepBack()" title="ถอยหลัง 1 แท่ง (Step Back)">
+                        <svg class="svg-icon" viewBox="0 0 24 24">
+                            <polygon points="11 19 2 12 11 5 11 19" />
+                            <polygon points="22 19 13 12 22 5 22 19" />
+                        </svg>
+                    </button>
+                    <button class="replay-btn primary-play" id="replay-play-btn" onclick="window.app.togglePlay()"
+                        title="เล่นอัตโนมัติ / หยุดชั่วคราว (Play/Pause)">
+                        <svg class="svg-icon" viewBox="0 0 24 24">
+                            <polygon points="5 3 19 12 5 21 5 3" />
+                        </svg>
+                    </button>
+                    <button class="replay-btn" onclick="window.app.stepForward()"
+                        title="เดินหน้า 1 แท่ง (Step Forward)">
+                        <svg class="svg-icon" viewBox="0 0 24 24">
+                            <polygon points="13 19 22 12 13 5 13 19" />
+                            <polygon points="2 19 11 12 2 5 2 19" />
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="topbar-sep"></div>
+
+                <!-- Speed Accelerator Controls (ฟีเจอร์การเร่งสปีดกราฟ) -->
+                <div class="replay-speed-group" title="เร่ง/ปรับความเร็วการเดินแท่งเทียน">
+                    <span class="speed-label-icon" title="ความเร็วการ Replay">
+                        <svg class="svg-icon" viewBox="0 0 24 24" style="width: 14px; height: 14px;">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                        </svg>
+                    </span>
+                    <div class="speed-pills">
+                        <button class="speed-pill" data-speed="1500" onclick="window.app.setReplaySpeed(1500, this)"
+                            title="ความเร็ว 0.5x (1.5s ต่อแท่ง)">0.5x</button>
+                        <button class="speed-pill active" data-speed="800"
+                            onclick="window.app.setReplaySpeed(800, this)"
+                            title="ความเร็วปกติ 1.0x (0.8s ต่อแท่ง)">1x</button>
+                        <button class="speed-pill" data-speed="350" onclick="window.app.setReplaySpeed(350, this)"
+                            title="เร่งความเร็ว 2.0x (0.35s ต่อแท่ง)">2x</button>
+                        <button class="speed-pill" data-speed="120" onclick="window.app.setReplaySpeed(120, this)"
+                            title="เร่งความเร็ว 5.0x (0.12s ต่อแท่ง)">5x</button>
+                        <button class="speed-pill turbo" data-speed="40" onclick="window.app.setReplaySpeed(40, this)"
+                            title="เร่งสปีดขั้นสุด Turbo 10x (0.04s ต่อแท่ง)">⚡10x</button>
+                    </div>
+                </div>
+
+                <div class="topbar-sep"></div>
+
+                <div class="replay-time-display" id="replay-time-label" title="เวลาจำลองปัจจุบัน">2026-09-15 14:00</div>
+
+                <div class="topbar-sep"></div>
+
+                <!-- Dedicated Backtest Strategy Performance Modal Trigger -->
+                <button class="tb-btn tb-btn-backtest" onclick="window.app.openBacktestStatsModal()"
+                    title="เปิดดูแดชบอร์ดสถิติผลลัพธ์ Backtest">
+                    <svg class="svg-icon" viewBox="0 0 24 24">
+                        <path d="M18 20V10M12 20V4M6 20v-6" />
+                    </svg>
+                    <span>ผลลัพธ์ Backtest</span>
+                </button>
+                <button class="tb-btn tb-btn-reset-bt" onclick="window.app.resetBacktestSession()"
+                    title="ล้างผลการซ้อมเทรดในเซสชันนี้เพื่อเริ่มต้นใหม่">
+                    <svg class="svg-icon" viewBox="0 0 24 24">
+                        <path d="M23 4v6h-6M1 20v-6h6" />
+                        <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+                    </svg>
+                </button>
+                <button class="tb-btn tb-btn-exit-replay" onclick="window.app.exitReplay()"
+                    title="ออกจากโหมด Replay และกลับสู่กราฟปัจจุบัน">
+                    ✕
+                </button>
+            </div>
+        </section>
+
+        <!-- Sidebar Collapse Tab on border -->
+        <button class="sidebar-collapse-tab" id="sidebar-tab-btn" onclick="window.app.toggleSidebar()"
+            title="ยุบ/ขยาย Sidebar">▶</button>
+
+        <!-- RIGHT SIDEBAR (WATCHLIST & VIRTUAL TRADING PAD) -->
+        <aside class="sidebar" id="app-sidebar">
+            <div class="sidebar-header" id="watchlist-header" onclick="window.app.toggleWatchlistCollapse()" title="แตะเพื่อยุบ/ขยายรายการเฝ้าดู (ขยาย Trade Pad เต็มพื้นที่)">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span class="wl-collapse-arrow" id="wl-collapse-arrow">▾</span>
+                    <svg class="svg-icon" viewBox="0 0 24 24">
+                        <path d="M3 3v18h18M7 16l4-4 4 4 5-6" />
+                    </svg>
+                    <span id="wl-header-title">รายการเฝ้าดู</span>
+                    <span class="wl-count-chip" id="wl-header-count">16</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 4px;" onclick="event.stopPropagation();">
+                    <button class="btn-pad-gear" id="btn-toggle-compact-wl"
+                        onclick="window.app.toggleWatchlistCompact()" title="สลับโหมดมุมมองแบบกระชับ (Compact View)">
+                        <svg class="svg-icon" viewBox="0 0 24 24" style="width: 12px; height: 12px;">
+                            <line x1="3" y1="6" x2="21" y2="6" />
+                            <line x1="3" y1="12" x2="21" y2="12" />
+                            <line x1="3" y1="18" x2="21" y2="18" />
+                        </svg>
+                    </button>
+                    <button class="btn-pad-gear" onclick="window.app.openWatchlistModal()"
+                        title="จัดการรายการเฝ้าดู (เพิ่ม / ลบ / เลื่อนลำดับคู่เงิน)">
+                        <svg class="svg-icon" viewBox="0 0 24 24" style="width: 12px; height: 12px;">
+                            <circle cx="12" cy="12" r="3" />
+                            <path
+                                d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" />
+                        </svg>
+                    </button>
+                    <button class="btn-pad-gear" id="btn-collapse-watchlist" onclick="window.app.toggleWatchlistCollapse()" title="ยุบ/ขยายรายการเฝ้าดู">
+                        <span id="btn-collapse-wl-icon">▲</span>
+                    </button>
+                    <button class="sidebar-close-btn" onclick="window.app.toggleSidebar()"
+                        title="ยุบแถบด้านข้าง">▶</button>
+                </div>
+            </div>
+
+            <!-- Unified Watchlist Items Container (รวมเป็นรายการเดียว ไม่แยกหมวดหมู่) -->
+            <div class="watchlist-list" id="watchlist-items-container"></div>
+
+            <!-- VIRTUAL TRADING PAD (ห้องซ้อมเทรดเสมือนจริง) -->
+            <div class="trading-pad" id="trading-pad-container">
+                <div class="pad-title">
+                    <span>Virtual Trade Pad</span>
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <span class="virtual-balance" id="virtual-balance-val">$10,000.00</span>
+                        <button class="btn-pad-gear" onclick="window.app.openAccountModal()"
+                            title="ตั้งค่าเงินทุนในบัญชี & Leverage">
+                            <svg class="svg-icon" viewBox="0 0 24 24" style="width: 13px; height: 13px;">
+                                <circle cx="12" cy="12" r="3" />
+                                <path
+                                    d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" />
+                            </svg>
+                        </button>
+                        <button class="btn-pad-stats" onclick="window.app.openBacktestStatsModal()"
+                            title="ดูสถิติและผลลัพธ์การ Backtest">
+                            <svg class="svg-icon" viewBox="0 0 24 24" style="width: 13px; height: 13px;">
+                                <path d="M18 20V10M12 20V4M6 20v-6" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Live Margin & Account Info Bar -->
+                <div class="pad-account-subbar" id="pad-account-subbar">
+                    <span id="subbar-equity" title="Equity พอร์ต">Eq: $10,000.00</span>
+                    <span id="subbar-margin" title="Margin ที่ใช้ไป">Mrg: $0.00</span>
+                    <span id="subbar-freemargin" title="Margin คงเหลือ">Free: $10,000.00</span>
+                    <span id="subbar-lev" title="Leverage บัญชี">1:500</span>
+                </div>
+
+                <div class="pad-inputs">
+                    <div class="pad-input-group">
+                        <label>Lot:</label>
+                        <input type="number" id="order-lot" value="0.10" step="0.01">
+                    </div>
+                    <div class="pad-input-group">
+                        <label>Stop Loss:</label>
+                        <input type="number" id="order-sl" placeholder="SL (ราคา หรือ Point)" step="any">
+                    </div>
+                    <div class="pad-input-group">
+                        <label>Take Profit:</label>
+                        <input type="number" id="order-tp" placeholder="TP (ราคา หรือ Point)" step="any">
+                    </div>
+                </div>
+
+                <!-- Quick Risk:Reward Presets -->
+                <div class="pad-rr-bar">
+                    <span class="pad-rr-label">Quick R:R:</span>
+                    <div class="pad-rr-group">
+                        <button type="button" class="btn-rr-chip active" id="rr-chip-1" onclick="window.app.setQuickRR(1)">1:1</button>
+                        <button type="button" class="btn-rr-chip" onclick="window.app.setQuickRR(1.5)">1:1.5</button>
+                        <button type="button" class="btn-rr-chip" id="rr-chip-2"
+                            onclick="window.app.setQuickRR(2)">1:2</button>
+                        <button type="button" class="btn-rr-chip" onclick="window.app.setQuickRR(3)">1:3</button>
+                        <button type="button" class="btn-rr-chip" onclick="window.app.setQuickRR(4)">1:4</button>
+                    </div>
+                </div>
+
+                <div class="pad-buttons">
+                    <button class="btn-trade-sell" onclick="window.app.placeOrder('SELL')">
+                        <svg class="svg-icon" viewBox="0 0 24 24" style="width: 13px; height: 13px; stroke-width: 2.5;">
+                            <path d="M12 5v14M5 12l7 7 7-7" />
+                        </svg>
+                        SELL / SHORT
+                    </button>
+                    <button class="btn-trade-buy" onclick="window.app.placeOrder('BUY')">
+                        <svg class="svg-icon" viewBox="0 0 24 24" style="width: 13px; height: 13px; stroke-width: 2.5;">
+                            <path d="M12 19V5M5 12l7-7 7 7" />
+                        </svg>
+                        BUY / LONG
+                    </button>
+                </div>
+
+                <!-- Positions Title & Counter Bar -->
+                <div class="positions-section-header" id="positions-section-header">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <span class="pos-hdr-dot"></span>
+                        <span class="pos-hdr-title">ออเดอร์ที่เปิดอยู่ (Active Orders)</span>
+                    </div>
+                    <span class="pos-hdr-badge" id="pos-hdr-count">0 ไม้</span>
+                </div>
+
+                <div class="virtual-positions" id="virtual-positions-list">
+                    <div class="no-positions">ไม่มี Order ค้างอยู่</div>
+                </div>
+            </div>
+        </aside>
+    </main>
+
+    <!-- 3. INDICATOR & "INDICATOR ON INDICATOR" MODAL -->
+    <div class="modal-overlay" id="indicator-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <span
+                        style="font-weight: 700; color: #38bdf8; font-family: serif; font-style: italic; font-size: 17px;">fx</span>
+                    <span>ตั้งค่าอินดิเคเตอร์ & แม่แบบกลยุทธ์ (Indicators & Presets)</span>
+                </h3>
+                <button class="modal-close-btn" onclick="window.app.closeIndicatorModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="modal-target-cell-idx" value="0">
+                <input type="hidden" id="modal-edit-ind-id" value="">
+
+                <!-- Active Chart Scope Display -->
+                <div class="tf-scope-box" style="margin-bottom: 10px;">
+                    <span class="tf-scope-label">เป้าหมายชาร์ต:</span>
+                    <span id="ind-modal-target-label"
+                        style="font-weight: 700; color: #38bdf8; font-size: 12px;">ชาร์ตที่ 1: XAUUSD</span>
+                </div>
+
+                <div class="ind-modal-grid">
+                    <!-- LEFT COLUMN: PRESETS & ACTIVE INDICATORS LIST -->
+                    <div class="ind-modal-col">
+                        <!-- 1. TRADING STYLE PRESETS -->
+                        <div class="ind-section-card">
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <span style="font-size: 11px; font-weight: 700; color: #fff;">⚡ เลือกชุด Preset
+                                    ตามสไตล์การเทรด (1-Click Apply All):</span>
+                            </div>
+                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;">
+                                <button type="button" class="btn-ind-preset"
+                                    onclick="window.app.applyStylePreset('scalping')"
+                                    title="Scalping Pro: Fast EMA 9, EMA 21, Parabolic SAR (0.02/0.2) และ RSI 7">
+                                    <span class="bip-icon">⚡</span>
+                                    <span class="bip-name">Scalping Pro</span>
+                                    <span class="bip-desc">EMA + PSAR + RSI 7</span>
+                                </button>
+                                <button type="button" class="btn-ind-preset"
+                                    onclick="window.app.applyStylePreset('daytrade')"
+                                    title="Day Trading: EMA 20, EMA 50, Parabolic SAR (0.015/0.15) และ RSI 14">
+                                    <span class="bip-icon">🎯</span>
+                                    <span class="bip-name">Day Trade</span>
+                                    <span class="bip-desc">EMA 20/50 + PSAR + RSI</span>
+                                </button>
+                                <button type="button" class="btn-ind-preset"
+                                    onclick="window.app.applyStylePreset('swingtrade')"
+                                    title="Swing Trading: EMA 50, EMA 200, Parabolic SAR (0.01/0.10) และ RSI 14">
+                                    <span class="bip-icon">🌊</span>
+                                    <span class="bip-name">Swing Trade</span>
+                                    <span class="bip-desc">EMA 50/200 + PSAR</span>
+                                </button>
+                                <button type="button" class="btn-ind-preset"
+                                    onclick="window.app.applyStylePreset('trendmaster')"
+                                    title="Trend Master: SMA 20, 50, 200 + Parabolic SAR">
+                                    <span class="bip-icon">📈</span>
+                                    <span class="bip-name">Trend Master</span>
+                                    <span class="bip-desc">SMA Triple + PSAR</span>
+                                </button>
+                                <button type="button" class="btn-ind-preset"
+                                    onclick="window.app.applyStylePreset('pullback_rsi')"
+                                    title="Mean Reversion: EMA 20 + Parabolic SAR + RSI 14 + SMA on RSI">
+                                    <span class="bip-icon">🔄</span>
+                                    <span class="bip-name">Pullback & Rev</span>
+                                    <span class="bip-desc">EMA + PSAR + RSI/SMA</span>
+                                </button>
+                                <button type="button" class="btn-ind-preset clear"
+                                    onclick="window.app.clearChartIndicators()"
+                                    title="ลบอินดิเคเตอร์ทั้งหมดออกจากชาร์ตนี้">
+                                    <span class="bip-icon">🧹</span>
+                                    <span class="bip-name">ล้างทั้งหมด</span>
+                                    <span class="bip-desc">Clear Indicators</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 2. ACTIVE INDICATORS LIST ON THIS CHART -->
+                        <div class="ind-section-card" style="flex: 1; display: flex; flex-direction: column;">
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <span style="font-weight: 700; font-size: 11px; color: #fff;">📋
+                                    อินดิเคเตอร์ที่เปิดอยู่บนชาร์ตนี้ (Active List):</span>
+                            </div>
+                            <div id="active-indicators-list" class="active-ind-scroll-box" style="flex: 1;">
+                                <!-- Rendered by JS -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- RIGHT COLUMN: INDIVIDUAL CONFIGURATOR, STYLES & SAVE BUTTONS -->
+                    <div class="ind-modal-col">
+                        <!-- 1. INDIVIDUAL INDICATOR SELECT & PARAMS -->
+                        <div class="ind-section-card">
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <span style="font-size: 11px; font-weight: 700; color: #fff;">📊
+                                    ปรับแต่งอินดิเคเตอร์รายตัว:</span>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom: 8px;">
+                                <label style="font-size: 11px; margin-bottom: 4px;">ประเภทอินดิเคเตอร์:</label>
+                                <select id="ind-type-select" class="form-control"
+                                    onchange="window.app.onIndTypeChange(this.value)"
+                                    style="padding: 6px 10px; font-size: 11.5px;">
+                                    <option value="EMA">EMA (Exponential Moving Average)</option>
+                                    <option value="SMA">SMA (Simple Moving Average)</option>
+                                    <option value="PSAR">PSAR (Parabolic SAR)</option>
+                                    <option value="RSI">RSI (Relative Strength Index)</option>
+                                </select>
+                            </div>
+
+                            <!-- Period Params Group (For SMA, EMA, RSI) -->
+                            <div id="ind-period-params-group">
+                                <div class="form-group" style="margin-bottom: 6px;">
+                                    <label style="font-size: 11px; margin-bottom: 4px;">Period
+                                        (ความยาวรอบคำนวณ):</label>
+                                    <input type="number" id="ind-period-input" class="form-control" value="20" min="1"
+                                        max="500" style="padding: 5px 8px; font-size: 12px;">
+                                </div>
+
+                                <!-- Quick Style Presets for Period -->
+                                <div id="ind-period-chips-box">
+                                    <span
+                                        style="font-size: 10px; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 4px;">Preset
+                                        แนะนำ:</span>
+                                    <div class="balance-presets" id="period-style-chips" style="margin-top: 0;">
+                                        <button type="button" class="btn-rr-chip"
+                                            onclick="window.app.setPeriodPreset(9)">⚡ 9 (Scalp)</button>
+                                        <button type="button" class="btn-rr-chip"
+                                            onclick="window.app.setPeriodPreset(14)">14 (RSI Std)</button>
+                                        <button type="button" class="btn-rr-chip active"
+                                            onclick="window.app.setPeriodPreset(20)">🎯 20 (Day Trade)</button>
+                                        <button type="button" class="btn-rr-chip"
+                                            onclick="window.app.setPeriodPreset(50)">50 (Mid)</button>
+                                        <button type="button" class="btn-rr-chip"
+                                            onclick="window.app.setPeriodPreset(100)">100 (Major)</button>
+                                        <button type="button" class="btn-rr-chip"
+                                            onclick="window.app.setPeriodPreset(200)">🌊 200 (Swing)</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- PSAR Params Group (For Parabolic SAR) -->
+                            <div id="ind-psar-params-group" style="display: none;">
+                                <div
+                                    style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 6px;">
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label style="font-size: 10.5px; margin-bottom: 3px;">AF Step
+                                            (เริ่มต้น):</label>
+                                        <input type="number" id="ind-psar-step-input" class="form-control" value="0.02"
+                                            step="0.005" min="0.001" max="0.2"
+                                            style="padding: 5px 8px; font-size: 11.5px;">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label style="font-size: 10.5px; margin-bottom: 3px;">Max AF (สูงสุด):</label>
+                                        <input type="number" id="ind-psar-max-input" class="form-control" value="0.20"
+                                            step="0.01" min="0.01" max="1.0"
+                                            style="padding: 5px 8px; font-size: 11.5px;">
+                                    </div>
+                                </div>
+
+                                <!-- Quick Presets for PSAR -->
+                                <div>
+                                    <span
+                                        style="font-size: 10px; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 4px;">Preset
+                                        แนะนำ PSAR:</span>
+                                    <div class="balance-presets" style="margin-top: 0;">
+                                        <button type="button" class="btn-rr-chip active"
+                                            onclick="window.app.setPSARPreset(0.02, 0.20)">⚡ 0.02/0.20</button>
+                                        <button type="button" class="btn-rr-chip"
+                                            onclick="window.app.setPSARPreset(0.015, 0.15)">🎯 0.015/0.15</button>
+                                        <button type="button" class="btn-rr-chip"
+                                            onclick="window.app.setPSARPreset(0.01, 0.10)">🌊 0.01/0.10</button>
+                                        <button type="button" class="btn-rr-chip"
+                                            onclick="window.app.setPSARPreset(0.005, 0.05)">🛡️ 0.005/0.05</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 2. Color, Width & Style Customizer + Indicator on Indicator -->
+                        <div class="ind-section-card">
+                            <!-- Color Swatches & Picker -->
+                            <div
+                                style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap;">
+                                <span
+                                    style="font-size: 10.5px; color: var(--text-muted); min-width: 42px;">สีเส้น:</span>
+                                <input type="color" id="ind-color-input" value="#ff9800"
+                                    oninput="window.app.setIndColor(this.value)"
+                                    style="width: 26px; height: 26px; border: none; border-radius: 6px; cursor: pointer; background: transparent;">
+                                <div class="ind-color-palette" style="display: flex; gap: 5px;">
+                                    <span class="color-dot active" data-color="#ff9800" style="background:#ff9800;"
+                                        onclick="window.app.setIndColor('#ff9800')"></span>
+                                    <span class="color-dot" data-color="#38bdf8" style="background:#38bdf8;"
+                                        onclick="window.app.setIndColor('#38bdf8')"></span>
+                                    <span class="color-dot" data-color="#22c55e" style="background:#22c55e;"
+                                        onclick="window.app.setIndColor('#22c55e')"></span>
+                                    <span class="color-dot" data-color="#ef4444" style="background:#ef4444;"
+                                        onclick="window.app.setIndColor('#ef4444')"></span>
+                                    <span class="color-dot" data-color="#9c27b0" style="background:#9c27b0;"
+                                        onclick="window.app.setIndColor('#9c27b0')"></span>
+                                    <span class="color-dot" data-color="#eab308" style="background:#eab308;"
+                                        onclick="window.app.setIndColor('#eab308')"></span>
+                                    <span class="color-dot" data-color="#ec4899" style="background:#ec4899;"
+                                        onclick="window.app.setIndColor('#ec4899')"></span>
+                                    <span class="color-dot" data-color="#f8fafc" style="background:#f8fafc;"
+                                        onclick="window.app.setIndColor('#f8fafc')"></span>
+                                </div>
+                            </div>
+
+                            <!-- Line Width & Line Style -->
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                                <div>
+                                    <span
+                                        style="font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 3px;">ขนาดเส้น
+                                        (Line Width):</span>
+                                    <input type="hidden" id="ind-width-input" value="1">
+                                    <div class="ind-width-chips" style="display: flex; gap: 4px;">
+                                        <button type="button" class="btn-rr-chip active" data-width="1"
+                                            onclick="window.app.setIndWidth(1)">1px</button>
+                                        <button type="button" class="btn-rr-chip" data-width="2"
+                                            onclick="window.app.setIndWidth(2)">2px</button>
+                                        <button type="button" class="btn-rr-chip" data-width="3"
+                                            onclick="window.app.setIndWidth(3)">3px</button>
+                                        <button type="button" class="btn-rr-chip" data-width="4"
+                                            onclick="window.app.setIndWidth(4)">4px</button>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <span
+                                        style="font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 3px;">รูปแบบเส้น
+                                        (Line Style):</span>
+                                    <select id="ind-style-select" class="form-control"
+                                        style="padding: 4px 8px; font-size: 11px;">
+                                        <option value="solid">─── เส้นทึบ (Solid)</option>
+                                        <option value="dashed">- - - เส้นประ (Dashed)</option>
+                                        <option value="dotted">· · · เส้นจุด (Dotted)</option>
+                                        <option value="large_dashed">━ ━ เส้นประยาว (Large Dashed)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Indicator on Indicator Checkbox -->
+                            <div class="ind-on-ind-box" style="padding: 6px 10px; margin-top: 0;">
+                                <label
+                                    style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--color-blue); font-weight: 700; font-size: 11px;">
+                                    <input type="checkbox" id="ind-on-ind-check"
+                                        onchange="document.getElementById('parent-ind-group').style.display = this.checked ? 'block' : 'none';">
+                                    เปิดโหมด "Indicator on Indicator"
+                                </label>
+                                <div id="parent-ind-group" style="display: none; margin-top: 6px;">
+                                    <p style="font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">
+                                        คำนวณซ้อนบนผลลัพธ์ของอินดิเคเตอร์เดิม (เช่น SMA บน RSI)
+                                    </p>
+                                    <select id="parent-ind-select" class="form-control"
+                                        style="font-size: 11px; padding: 4px 8px;">
+                                        <option value="RSI">RSI</option>
+                                        <option value="SMA">SMA</option>
+                                        <option value="EMA">EMA</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="ind-actions-row">
+                            <button type="button" class="tb-btn" onclick="window.app.closeIndicatorModal()"
+                                style="padding: 6px 14px; font-size: 11.5px;">ปิด</button>
+                            <button type="button" class="tb-btn tb-btn-primary" id="btn-apply-ind"
+                                onclick="window.app.applyIndicator()" style="padding: 6px 16px; font-size: 11.5px;">+
+                                บันทึก / เพิ่มลงชาร์ต</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3.1 INDICATOR QUICK EDIT SUB-MODAL (ซ้อนบนหน้า FX) -->
+    <div class="modal-overlay" id="indicator-edit-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <span style="color: #38bdf8; font-size: 15px;">⚙️</span>
+                    <span id="submodal-ind-title">ปรับแต่งการตั้งค่าอินดิเคเตอร์</span>
+                </h3>
+                <button class="modal-close-btn" onclick="window.app.closeIndicatorEditSubModal()">✕</button>
+            </div>
+            <div class="modal-body" style="padding: 16px 20px;">
+                <input type="hidden" id="submodal-cell-idx" value="0">
+                <input type="hidden" id="submodal-ind-id" value="">
+                <input type="hidden" id="submodal-ind-type" value="">
+
+                <!-- Period Parameter Group -->
+                <div id="submodal-period-group" class="form-group" style="margin-bottom: 12px;">
+                    <label style="font-size: 11px; margin-bottom: 4px;">Period (ความยาวรอบคำนวณ):</label>
+                    <input type="number" id="submodal-period-input" class="form-control" value="20" min="1" max="500"
+                        style="font-size: 12px; padding: 6px 10px;">
+                    <div class="balance-presets" style="margin-top: 6px;">
+                        <button type="button" class="btn-rr-chip" onclick="window.app.setSubModalPeriod(9)">⚡ 9
+                            (Scalp)</button>
+                        <button type="button" class="btn-rr-chip" onclick="window.app.setSubModalPeriod(14)">14
+                            (RSI)</button>
+                        <button type="button" class="btn-rr-chip" onclick="window.app.setSubModalPeriod(20)">🎯 20
+                            (Day)</button>
+                        <button type="button" class="btn-rr-chip" onclick="window.app.setSubModalPeriod(50)">50
+                            (Mid)</button>
+                        <button type="button" class="btn-rr-chip"
+                            onclick="window.app.setSubModalPeriod(100)">100</button>
+                        <button type="button" class="btn-rr-chip" onclick="window.app.setSubModalPeriod(200)">🌊 200
+                            (Swing)</button>
+                    </div>
+                </div>
+
+                <!-- PSAR Parameter Group -->
+                <div id="submodal-psar-group" style="display: none; margin-bottom: 12px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px;">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="font-size: 10.5px; margin-bottom: 3px;">AF Step (เริ่มต้น):</label>
+                            <input type="number" id="submodal-psar-step" class="form-control" value="0.02" step="0.005"
+                                min="0.001" max="0.2" style="font-size: 11.5px; padding: 6px 8px;">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="font-size: 10.5px; margin-bottom: 3px;">Max AF (สูงสุด):</label>
+                            <input type="number" id="submodal-psar-max" class="form-control" value="0.20" step="0.01"
+                                min="0.01" max="1.0" style="font-size: 11.5px; padding: 6px 8px;">
+                        </div>
+                    </div>
+                    <div class="balance-presets" style="margin-top: 4px;">
+                        <button type="button" class="btn-rr-chip" onclick="window.app.setSubModalPSAR(0.02, 0.20)">⚡
+                            0.02/0.20</button>
+                        <button type="button" class="btn-rr-chip" onclick="window.app.setSubModalPSAR(0.015, 0.15)">🎯
+                            0.015/0.15</button>
+                        <button type="button" class="btn-rr-chip" onclick="window.app.setSubModalPSAR(0.01, 0.10)">🌊
+                            0.01/0.10</button>
+                        <button type="button" class="btn-rr-chip" onclick="window.app.setSubModalPSAR(0.005, 0.05)">🛡️
+                            0.005/0.05</button>
+                    </div>
+                </div>
+
+                <!-- Color Palette & Picker -->
+                <div
+                    style="margin-bottom: 12px; background: #13161f; border: 1px solid rgba(255,255,255,0.03); border-radius: 8px; padding: 8px 10px;">
+                    <label
+                        style="font-size: 10.5px; margin-bottom: 5px; display: block; color: var(--text-muted);">สีเส้น
+                        (Color):</label>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="color" id="submodal-color-input" value="#38bdf8"
+                            oninput="window.app.setSubModalColor(this.value)"
+                            style="width: 26px; height: 26px; border: none; border-radius: 6px; cursor: pointer; background: transparent;">
+                        <div class="ind-color-palette" style="display: flex; gap: 6px;">
+                            <span class="color-dot sub-dot active" data-color="#38bdf8" style="background:#38bdf8;"
+                                onclick="window.app.setSubModalColor('#38bdf8')"></span>
+                            <span class="color-dot sub-dot" data-color="#fb923c" style="background:#fb923c;"
+                                onclick="window.app.setSubModalColor('#fb923c')"></span>
+                            <span class="color-dot sub-dot" data-color="#34d399" style="background:#34d399;"
+                                onclick="window.app.setSubModalColor('#34d399')"></span>
+                            <span class="color-dot sub-dot" data-color="#f87171" style="background:#f87171;"
+                                onclick="window.app.setSubModalColor('#f87171')"></span>
+                            <span class="color-dot sub-dot" data-color="#c084fc" style="background:#c084fc;"
+                                onclick="window.app.setSubModalColor('#c084fc')"></span>
+                            <span class="color-dot sub-dot" data-color="#fbbf24" style="background:#fbbf24;"
+                                onclick="window.app.setSubModalColor('#fbbf24')"></span>
+                            <span class="color-dot sub-dot" data-color="#f472b6" style="background:#f472b6;"
+                                onclick="window.app.setSubModalColor('#f472b6')"></span>
+                            <span class="color-dot sub-dot" data-color="#f8fafc" style="background:#f8fafc;"
+                                onclick="window.app.setSubModalColor('#f8fafc')"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Line Width & Style -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;">
+                    <div>
+                        <label
+                            style="font-size: 10.5px; margin-bottom: 3px; display: block; color: var(--text-muted);">ขนาดเส้น
+                            (Width):</label>
+                        <input type="hidden" id="submodal-width-input" value="1">
+                        <div class="ind-width-chips" style="display: flex; gap: 4px;">
+                            <button type="button" class="btn-rr-chip sub-w-chip active" data-width="1"
+                                onclick="window.app.setSubModalWidth(1)">1px</button>
+                            <button type="button" class="btn-rr-chip sub-w-chip" data-width="2"
+                                onclick="window.app.setSubModalWidth(2)">2px</button>
+                            <button type="button" class="btn-rr-chip sub-w-chip" data-width="3"
+                                onclick="window.app.setSubModalWidth(3)">3px</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label
+                            style="font-size: 10.5px; margin-bottom: 3px; display: block; color: var(--text-muted);">รูปแบบเส้น
+                            (Style):</label>
+                        <select id="submodal-style-select" class="form-control"
+                            style="padding: 4px 8px; font-size: 11px;">
+                            <option value="solid">─── เส้นทึบ (Solid)</option>
+                            <option value="dashed">- - - เส้นประ (Dashed)</option>
+                            <option value="dotted">· · · เส้นจุด (Dotted)</option>
+                            <option value="large_dashed">━ ━ เส้นประยาว (Large Dashed)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Submodal Action Buttons -->
+                <div
+                    style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 10px;">
+                    <button type="button" class="tb-btn" onclick="window.app.closeIndicatorEditSubModal()"
+                        style="font-size: 11.5px; padding: 6px 12px;">ยกเลิก</button>
+                    <button type="button" class="tb-btn tb-btn-primary"
+                        onclick="window.app.saveIndicatorEditFromSubModal()"
+                        style="font-size: 11.5px; padding: 6px 16px;">✓ บันทึกการแก้ไข</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. TRADE JOURNAL MODAL (CALENDAR + STATS + LOG) -->
+    <div class="modal-overlay" id="journal-modal">
+        <div class="modal-content" style="max-width: 950px;">
+            <div class="modal-header">
+                <h3 class="modal-title">TradingTools Journal & Calendar</h3>
+                <button class="modal-close-btn" onclick="window.app.closeJournalModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <!-- Stats Overview -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">Net Profit / Loss</div>
+                        <div class="stat-val pos" id="j-pnl">$0.00</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Win Rate</div>
+                        <div class="stat-val" id="j-winrate">0%</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Profit Factor</div>
+                        <div class="stat-val" id="j-pf">0.00</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Total Trades</div>
+                        <div class="stat-val" id="j-trades">0</div>
+                    </div>
+                </div>
+
+                <!-- Monthly Calendar -->
+                <div class="calendar-container">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <b id="calendar-month-label">กันยายน 2026</b>
+                        <span style="font-size: 11px; color: var(--text-muted);">สีเขียว = กำไร | สีแดง = ขาดทุน</span>
+                    </div>
+                    <div class="calendar-grid" id="journal-calendar-grid"></div>
+                </div>
+
+                <!-- Add Trade Form -->
+                <div
+                    style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+                    <b style="font-size: 12px;">+ บันทึกไม้เทรดใหม่</b>
+                    <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 8px;">
+                        <input type="text" id="add-trade-symbol" class="form-control" placeholder="Symbol (XAUUSD)"
+                            value="XAUUSD">
+                        <select id="add-trade-type" class="form-control">
+                            <option value="BUY">BUY</option>
+                            <option value="SELL">SELL</option>
+                        </select>
+                        <input type="number" id="add-trade-lot" class="form-control" placeholder="Lot" value="0.5">
+                        <input type="number" id="add-trade-pnl" class="form-control" placeholder="PnL ($)" value="350">
+                        <input type="number" id="add-trade-rr" class="form-control" placeholder="R:R" value="2.0">
+                        <select id="add-trade-emotion" class="form-control">
+                            <option value="disciplined">มีวินัย (Disciplined)</option>
+                            <option value="calm">สงบนิ่ง (Calm)</option>
+                            <option value="fomo">FOMO / ไล่ราคา</option>
+                            <option value="revenge">Revenge trade</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; gap: 8px; margin-top: 8px;">
+                        <input type="text" id="add-trade-notes" class="form-control"
+                            placeholder="บันทึกเหตุผลการเข้าเทรด หรือสภาพตลาด..." style="flex: 1;">
+                        <button class="tb-btn tb-btn-primary" onclick="window.app.saveNewTrade()">บันทึก</button>
+                    </div>
+                </div>
+
+                <!-- Trade Log Table -->
+                <table class="trade-table">
+                    <thead>
+                        <tr>
+                            <th>วันที่</th>
+                            <th>คู่เงิน</th>
+                            <th>ประเภท</th>
+                            <th>Lot</th>
+                            <th>กำไร/ขาดทุน</th>
+                            <th>R:R</th>
+                            <th>อารมณ์</th>
+                            <th>โน้ต</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="journal-table-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. AI TRADING COACH MODAL -->
+    <div class="modal-overlay" id="ai-coach-modal">
+        <div class="modal-content" style="max-width: 650px;">
+            <div class="modal-header">
+                <h3 class="modal-title">AI Trading Coach (วิเคราะห์จิตวิทยาและพฤติกรรม)</h3>
+                <button class="modal-close-btn" onclick="window.app.closeAICoach()">✕</button>
+            </div>
+            <div class="modal-body">
+                <p style="color: var(--text-secondary); margin-bottom: 12px; font-size: 12px;">
+                    ระบบได้รวบรวมข้อมูลสถิติ P&L, Win Rate และแท็กอารมณ์ (FOMO, Revenge Trade, Disciplined)
+                    จากประวัติการเทรดของคุณ พร้อมสำหรับส่งให้โมเดล AI (เช่น Google Gemini หรือ Claude)
+                    วิเคราะห์จุดบกพร่อง:
+                </p>
+                <textarea id="ai-coach-prompt-box" class="form-control" rows="12"
+                    style="font-family: var(--font-mono); font-size: 11px;"></textarea>
+                <div style="margin-top: 14px; display: flex; justify-content: flex-end; gap: 8px;">
+                    <button class="tb-btn"
+                        onclick="navigator.clipboard.writeText(document.getElementById('ai-coach-prompt-box').value); window.app.showToast('📋 คัดลอก Prompt สำเร็จ!');">📋
+                        คัดลอก Prompt</button>
+                    <button class="tb-btn tb-btn-primary" onclick="window.app.closeAICoach()">ปิด</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 6. QUICK SYMBOL PICKER MODAL (แตะเปลี่ยนคู่เงินได้ทันทีบนหัวชาร์ต) -->
+    <div class="modal-overlay" id="symbol-picker-modal">
+        <div class="modal-content" style="max-width: 480px;">
+            <div class="modal-header">
+                <h3 class="modal-title">เลือกเปลี่ยนคู่เงิน (Select Symbol)</h3>
+                <button class="modal-close-btn" onclick="window.app.closeSymbolSelector()">✕</button>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="symbol-picker-search" class="form-control"
+                    placeholder="🔍 พิมพ์ค้นหาคู่เงิน (เช่น XAUUSD, EUR, BTC, OIL)..."
+                    oninput="window.app.filterSymbolPicker(this.value)">
+
+                <div class="symbol-picker-list" id="symbol-picker-list">
+                    <!-- รายการคู่เงินจะถูกสร้างโดย JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 7. BACKTEST STRATEGY STATS MODAL (สถิติกลยุทธ์การฝึกฝน Backtest) -->
+    <div class="modal-overlay" id="backtest-stats-modal">
+        <div class="modal-content" style="max-width: 820px;">
+            <div class="modal-header">
+                <h3 class="modal-title">📊 สถิติกลยุทธ์การ Backtest (Strategy Performance)</h3>
+                <button class="modal-close-btn" onclick="window.app.closeBacktestStatsModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">Net Profit / Loss</div>
+                        <div class="stat-val" id="bt-net-pnl">$0.00</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Win Rate</div>
+                        <div class="stat-val" id="bt-winrate">0%</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Profit Factor</div>
+                        <div class="stat-val" id="bt-pf">0.00</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Max Drawdown</div>
+                        <div class="stat-val neg" id="bt-max-dd">$0.00</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Total Trades</div>
+                        <div class="stat-val" id="bt-total-trades">0 (W:0 / L:0)</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Balance ปัจจุบัน</div>
+                        <div class="stat-val pos" id="bt-balance">$10,000.00</div>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin: 18px 0 8px 0;">
+                    <b style="font-size: 13px;">บันทึกไม้เทรดในเซสชันนี้ (Session Trade Log)</b>
+                    <button class="tb-btn" style="color: var(--color-red); font-size: 11px;"
+                        onclick="window.app.resetBacktestSession()">🔄 รีเซ็ตผลการทดสอบ</button>
+                </div>
+
+                <div class="bt-table-container">
+                    <table class="journal-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>คำสั่ง</th>
+                                <th>คู่เงิน</th>
+                                <th>Lot</th>
+                                <th>ราคาเข้า</th>
+                                <th>ราคาออก</th>
+                                <th>P&L ($)</th>
+                                <th>เหตุผลการปิด</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bt-trades-tbody">
+                            <tr>
+                                <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 16px;">
+                                    ยังไม่มีประวัติการเทรดในเซสชันนี้</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 6. ACCOUNT BALANCE & LEVERAGE SETTINGS MODAL -->
+    <div class="modal-overlay" id="account-settings-modal">
+        <div class="modal-content" style="max-width: 440px;">
+            <div class="modal-header">
+                <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg class="svg-icon" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="3" />
+                        <path
+                            d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" />
+                    </svg>
+                    ตั้งค่าบัญชี & Leverage
+                </h3>
+                <button class="modal-close-btn" onclick="window.app.closeAccountModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>เงินทุนในบัญชีเริ่มต้น (Account Balance $):</label>
+                    <input type="number" id="setting-balance-input" class="form-control" value="10000" step="100">
+                    <div class="balance-presets" style="display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;">
+                        <button type="button" class="btn-rr-chip"
+                            onclick="document.getElementById('setting-balance-input').value = 1000">$1,000</button>
+                        <button type="button" class="btn-rr-chip"
+                            onclick="document.getElementById('setting-balance-input').value = 3000">$3,000</button>
+                        <button type="button" class="btn-rr-chip"
+                            onclick="document.getElementById('setting-balance-input').value = 5000">$5,000</button>
+                        <button type="button" class="btn-rr-chip active"
+                            onclick="document.getElementById('setting-balance-input').value = 10000">$10,000</button>
+                        <button type="button" class="btn-rr-chip"
+                            onclick="document.getElementById('setting-balance-input').value = 50000">$50,000</button>
+                        <button type="button" class="btn-rr-chip"
+                            onclick="document.getElementById('setting-balance-input').value = 100000">$100,000</button>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-top: 14px;">
+                    <label>อัตราทดเลเวอเรจ (Account Leverage):</label>
+                    <select id="setting-leverage-select" class="form-control">
+                        <option value="50">1:50</option>
+                        <option value="100">1:100</option>
+                        <option value="200">1:200</option>
+                        <option value="500" selected>1:500 (มาตรฐาน Exness)</option>
+                        <option value="1000">1:1000</option>
+                        <option value="2000">1:2000</option>
+                        <option value="3000">1:Unlimited (1:3000)</option>
+                    </select>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;">
+                    <button type="button" class="tb-btn" onclick="window.app.closeAccountModal()">ยกเลิก</button>
+                    <button type="button" class="tb-btn tb-btn-primary" onclick="window.app.saveAccountSettings()">💾
+                        บันทึกการตั้งค่า</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 7. EDIT SL/TP MODAL (MT5 Style) -->
+    <div class="modal-overlay" id="edit-sltp-modal">
+        <div class="modal-content" style="max-width: 420px;">
+            <div class="modal-header">
+                <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg class="svg-icon" viewBox="0 0 24 24">
+                        <path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
+                    </svg>
+                    แก้ไข SL / TP (Modify Order)
+                </h3>
+                <button class="modal-close-btn" onclick="window.app.closeEditSLTPModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-sltp-order-id">
+                <div id="edit-sltp-order-summary"
+                    style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px; margin-bottom: 12px; font-family: var(--font-mono); font-size: 12px;">
+                </div>
+
+                <div class="form-group">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <label style="margin-bottom: 0;">Stop Loss (SL - ราคา หรือระยะ Point):</label>
+                        <button type="button" class="btn-input-clear" onclick="window.app.clearEditSL()" title="ลบ SL ออกจากออเดอร์นี้">✕ ลบ SL</button>
+                    </div>
+                    <input type="number" id="edit-order-sl" class="form-control" step="any" placeholder="เว้นว่างหากไม่ต้องการตั้ง SL">
+                </div>
+
+                <div class="form-group" style="margin-top: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <label style="margin-bottom: 0;">Take Profit (TP - ราคา หรือระยะ Point):</label>
+                        <button type="button" class="btn-input-clear" onclick="window.app.clearEditTP()" title="ลบ TP ออกจากออเดอร์นี้">✕ ลบ TP</button>
+                    </div>
+                    <input type="number" id="edit-order-tp" class="form-control" step="any" placeholder="เว้นว่างหากไม่ต้องการตั้ง TP">
+                </div>
+
+                <div class="pad-rr-bar" style="margin-top: 10px;">
+                    <span class="pad-rr-label">Quick R:R:</span>
+                    <div class="pad-rr-group">
+                        <button type="button" class="btn-rr-chip" onclick="window.app.setEditQuickRR(1)">1:1</button>
+                        <button type="button" class="btn-rr-chip"
+                            onclick="window.app.setEditQuickRR(1.5)">1:1.5</button>
+                        <button type="button" class="btn-rr-chip active"
+                            onclick="window.app.setEditQuickRR(2)">1:2</button>
+                        <button type="button" class="btn-rr-chip" onclick="window.app.setEditQuickRR(3)">1:3</button>
+                        <button type="button" class="btn-rr-chip" onclick="window.app.setEditQuickRR(4)">1:4</button>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;">
+                    <button type="button" class="tb-btn" onclick="window.app.closeEditSLTPModal()">ยกเลิก</button>
+                    <button type="button" class="tb-btn tb-btn-primary" onclick="window.app.saveEditSLTP()">💾
+                        ปรับเปลี่ยนออเดอร์</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 8. TIMEFRAME & BAR TYPE PICKER MODAL -->
+    <div class="modal-overlay" id="timeframe-picker-modal">
+        <div class="modal-content" style="max-width: 480px;">
+            <div class="modal-header">
+                <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg class="svg-icon" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="9" />
+                        <polyline points="12 6 12 12 16 14" />
+                    </svg>
+                    <span>เลือก Timeframe & แท่งกราฟ</span>
+                </h3>
+                <button class="modal-close-btn" onclick="window.app.closeTimeframePicker()">✕</button>
+            </div>
+            <div class="modal-body">
+                <!-- Target Scope Selector (เฉพาะชาร์ตที่เลือก / ทุกชาร์ต) -->
+                <div class="tf-scope-box">
+                    <span class="tf-scope-label">เป้าหมาย:</span>
+                    <div class="tf-scope-options">
+                        <button type="button" class="btn-rr-chip active" id="tf-scope-active-btn"
+                            onclick="window.app.setTfScope(false)">
+                            🎯 <span id="tf-target-cell-name">เฉพาะชาร์ตที่เลือก</span>
+                        </button>
+                        <button type="button" class="btn-rr-chip" id="tf-scope-all-btn"
+                            onclick="window.app.setTfScope(true)">
+                            🌐 ทุกชาร์ตพร้อมกัน
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 1. Standard Minutes -->
+                <div class="tf-section">
+                    <div class="tf-section-title">⏱️ นาที (Minutes)</div>
+                    <div class="tf-chip-grid">
+                        <button type="button" class="tf-chip" onclick="window.app.selectTimeframeChip('1m')">1m</button>
+                        <button type="button" class="tf-chip" onclick="window.app.selectTimeframeChip('2m')">2m</button>
+                        <button type="button" class="tf-chip" onclick="window.app.selectTimeframeChip('3m')">3m</button>
+                        <button type="button" class="tf-chip" onclick="window.app.selectTimeframeChip('5m')">5m</button>
+                        <button type="button" class="tf-chip"
+                            onclick="window.app.selectTimeframeChip('10m')">10m</button>
+                        <button type="button" class="tf-chip"
+                            onclick="window.app.selectTimeframeChip('15m')">15m</button>
+                        <button type="button" class="tf-chip"
+                            onclick="window.app.selectTimeframeChip('30m')">30m</button>
+                        <button type="button" class="tf-chip"
+                            onclick="window.app.selectTimeframeChip('45m')">45m</button>
+                    </div>
+                </div>
+
+                <!-- 2. Hours & Daily -->
+                <div class="tf-section">
+                    <div class="tf-section-title">🕐 ชั่วโมง & วัน (Hours & Daily)</div>
+                    <div class="tf-chip-grid">
+                        <button type="button" class="tf-chip" onclick="window.app.selectTimeframeChip('1h')">1h</button>
+                        <button type="button" class="tf-chip" onclick="window.app.selectTimeframeChip('2h')">2h</button>
+                        <button type="button" class="tf-chip" onclick="window.app.selectTimeframeChip('3h')">3h</button>
+                        <button type="button" class="tf-chip" onclick="window.app.selectTimeframeChip('4h')">4h</button>
+                        <button type="button" class="tf-chip" onclick="window.app.selectTimeframeChip('6h')">6h</button>
+                        <button type="button" class="tf-chip" onclick="window.app.selectTimeframeChip('8h')">8h</button>
+                        <button type="button" class="tf-chip"
+                            onclick="window.app.selectTimeframeChip('12h')">12h</button>
+                        <button type="button" class="tf-chip" onclick="window.app.selectTimeframeChip('1d')">1D
+                            (Day)</button>
+                        <button type="button" class="tf-chip" onclick="window.app.selectTimeframeChip('1w')">1W
+                            (Week)</button>
+                    </div>
+                </div>
+
+                <!-- 3. Custom Minute Input -->
+                <div class="tf-section">
+                    <div class="tf-section-title">⚙️ กำหนดนาทีเอง (Custom Minutes)</div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <input type="number" id="custom-tf-number-input" class="form-control"
+                            placeholder="เช่น 7, 20, 120" style="flex: 1;" min="1" max="1440" value="7">
+                        <span style="font-weight: 600; color: var(--text-muted); font-size: 11px;">นาที (m)</span>
+                        <button type="button" class="tb-btn tb-btn-primary"
+                            onclick="window.app.applyCustomMinute()">นำไปใช้</button>
+                    </div>
+                </div>
+
+                <!-- 4. Quick Link to Range & Tick Bars -->
+                <div class="tf-section"
+                    style="border-top: 1px solid rgba(255,255,255,0.04); padding-top: 10px; margin-bottom: 0;">
+                    <div class="tf-section-title">📊 รูปแบบแท่งพิเศษ (Special Bar Types)</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <button type="button" class="tf-special-card" onclick="window.app.openRangeBarModal()">
+                            <div style="font-weight: 700; color: #f59e0b; font-size: 11.5px; margin-bottom: 2px;">📐
+                                Range Bar</div>
+                            <div style="font-size: 9.5px; color: var(--text-muted);">แท่งเทียนตามระยะราคาแกว่ง</div>
+                        </button>
+                        <button type="button" class="tf-special-card" onclick="window.app.openTickBarModal()">
+                            <div style="font-weight: 700; color: #26a69a; font-size: 11.5px; margin-bottom: 2px;">⚡ Tick
+                                Bar</div>
+                            <div style="font-size: 9.5px; color: var(--text-muted);">แท่งเทียนตามจำนวน Tick</div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 9. RANGE BAR MODAL -->
+    <div class="modal-overlay" id="range-bar-modal">
+        <div class="modal-content" style="max-width: 440px;">
+            <div class="modal-header">
+                <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px; color: #f59e0b;">
+                    <svg class="svg-icon" viewBox="0 0 24 24">
+                        <path d="M21 6H3M21 12H3M21 18H3" />
+                    </svg>
+                    <span>ตั้งค่า Range Bar</span>
+                </h3>
+                <button class="modal-close-btn" onclick="window.app.closeRangeBarModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 11.5px; color: var(--text-secondary); margin-bottom: 12px; line-height: 1.4;">
+                    Range Bar จะสร้างแท่งเทียนใหม่เมื่อราคาแกว่งครบตามระยะที่กำหนด ช่วยตัดสัญญาณรบกวนในช่วงตลาด Sideway
+                    ได้อย่างมีประสิทธิภาพ
+                </p>
+
+                <!-- Scope Selector -->
+                <div class="tf-scope-box" style="margin-bottom: 12px;">
+                    <span class="tf-scope-label">เป้าหมาย:</span>
+                    <div class="tf-scope-options">
+                        <button type="button" class="btn-rr-chip active" id="range-scope-active-btn"
+                            onclick="window.app.setRangeScope(false)">
+                            🎯 <span id="range-target-cell-name">เฉพาะชาร์ตที่เลือก</span>
+                        </button>
+                        <button type="button" class="btn-rr-chip" id="range-scope-all-btn"
+                            onclick="window.app.setRangeScope(true)">
+                            🌐 ทุกชาร์ตพร้อมกัน
+                        </button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>ขนาด Range Bar ต่อแท่ง (ราคา/จุด):</label>
+                    <input type="number" id="range-bar-size-input" class="form-control" step="0.1" value="2.0"
+                        placeholder="เช่น 1.5 หรือ 2.0 สำหรับทองคำ">
+
+                    <div class="balance-presets" style="margin-top: 8px;">
+                        <button type="button" class="btn-rr-chip"
+                            onclick="document.getElementById('range-bar-size-input').value = 0.5">0.5</button>
+                        <button type="button" class="btn-rr-chip"
+                            onclick="document.getElementById('range-bar-size-input').value = 1.0">1.0</button>
+                        <button type="button" class="btn-rr-chip"
+                            onclick="document.getElementById('range-bar-size-input').value = 1.5">1.5</button>
+                        <button type="button" class="btn-rr-chip active"
+                            onclick="document.getElementById('range-bar-size-input').value = 2.0">2.0 (แนะนำ)</button>
+                        <button type="button" class="btn-rr-chip"
+                            onclick="document.getElementById('range-bar-size-input').value = 3.0">3.0</button>
+                        <button type="button" class="btn-rr-chip"
+                            onclick="document.getElementById('range-bar-size-input').value = 5.0">5.0</button>
+                        <button type="button" class="btn-rr-chip"
+                            onclick="document.getElementById('range-bar-size-input').value = 10.0">10.0</button>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;">
+                    <button type="button" class="tb-btn" onclick="window.app.closeRangeBarModal()">ยกเลิก</button>
+                    <button type="button" class="tb-btn tb-btn-primary" onclick="window.app.saveRangeBar()">✓ ใช้งาน
+                        Range Bar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 10. TICK BAR MODAL -->
+    <div class="modal-overlay" id="tick-bar-modal">
+        <div class="modal-content" style="max-width: 440px;">
+            <div class="modal-header">
+                <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px; color: #26a69a;">
+                    <svg class="svg-icon" viewBox="0 0 24 24">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                    </svg>
+                    <span>ตั้งค่า Tick Bar (อิงจำนวน Tick ธุรกรรม)</span>
+                </h3>
+                <button class="modal-close-btn" onclick="window.app.closeTickBarModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 11.5px; color: var(--text-secondary); margin-bottom: 12px; line-height: 1.4;">
+                    Tick Bar สร้างแท่งเทียนตามจำนวนการจับคู่ธุรกรรม (Tick) ช่วยให้เห็นความหนาแน่นและสปีดของ Volume
+                    อย่างแท้จริง
+                </p>
+
+                <!-- Scope Selector -->
+                <div class="tf-scope-box" style="margin-bottom: 12px;">
+                    <span class="tf-scope-label">เป้าหมาย:</span>
+                    <div class="tf-scope-options">
+                        <button type="button" class="btn-rr-chip active" id="tick-scope-active-btn"
+                            onclick="window.app.setTickScope(false)">
+                            🎯 <span id="tick-target-cell-name">เฉพาะชาร์ตที่เลือก</span>
+                        </button>
+                        <button type="button" class="btn-rr-chip" id="tick-scope-all-btn"
+                            onclick="window.app.setTickScope(true)">
+                            🌐 ทุกชาร์ตพร้อมกัน
+                        </button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>จำนวน Tick ต่อหนึ่งแท่ง:</label>
+                    <input type="number" id="tick-bar-count-input" class="form-control" step="10" value="250"
+                        placeholder="เช่น 100, 250, 500 Ticks">
+
+                    <div class="balance-presets" style="margin-top: 8px;">
+                        <button type="button" class="btn-rr-chip"
+                            onclick="document.getElementById('tick-bar-count-input').value = 50">50 Ticks</button>
+                        <button type="button" class="btn-rr-chip"
+                            onclick="document.getElementById('tick-bar-count-input').value = 100">100 Ticks</button>
+                        <button type="button" class="btn-rr-chip active"
+                            onclick="document.getElementById('tick-bar-count-input').value = 250">250 Ticks
+                            (แนะนำ)</button>
+                        <button type="button" class="btn-rr-chip"
+                            onclick="document.getElementById('tick-bar-count-input').value = 500">500 Ticks</button>
+                        <button type="button" class="btn-rr-chip"
+                            onclick="document.getElementById('tick-bar-count-input').value = 1000">1,000 Ticks</button>
+                        <button type="button" class="btn-rr-chip"
+                            onclick="document.getElementById('tick-bar-count-input').value = 2000">2,000 Ticks</button>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;">
+                    <button type="button" class="tb-btn" onclick="window.app.closeTickBarModal()">ยกเลิก</button>
+                    <button type="button" class="tb-btn tb-btn-primary" onclick="window.app.saveTickBar()">✓ ใช้งาน Tick
+                        Bar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 11. UNIVERSAL CONFIRM DIALOG MODAL -->
+    <div class="modal-overlay" id="confirm-dialog-modal">
+        <div class="modal-content" style="max-width: 400px; text-align: center;">
+            <div class="modal-body" style="padding: 24px 20px;">
+                <div
+                    style="width: 46px; height: 46px; border-radius: 50%; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); display: flex; align-items: center; justify-content: center; margin: 0 auto 14px auto; color: #f59e0b;">
+                    <svg class="svg-icon" viewBox="0 0 24 24" style="width: 22px; height: 22px;">
+                        <path
+                            d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01" />
+                    </svg>
+                </div>
+                <h3 id="confirm-dialog-title"
+                    style="font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 8px;">ยืนยันการทำรายการ</h3>
+                <p id="confirm-dialog-message"
+                    style="font-size: 12px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5;"></p>
+                <div style="display: flex; justify-content: center; gap: 10px;">
+                    <button type="button" class="tb-btn" id="confirm-dialog-cancel-btn"
+                        onclick="window.app.cancelConfirmDialog()"
+                        style="min-width: 90px; justify-content: center;">ยกเลิก</button>
+                    <button type="button" class="tb-btn tb-btn-primary" id="confirm-dialog-ok-btn"
+                        onclick="window.app.executeConfirmDialog()"
+                        style="min-width: 90px; justify-content: center; background: linear-gradient(135deg, #dc2626, #ef4444); border-color: rgba(239, 68, 68, 0.4);">ยืนยัน</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 12. WATCHLIST MANAGEMENT MODAL (จัดการรายการเฝ้าดู เพิ่ม/ลบ/จัดลำดับ) -->
+    <div class="modal-overlay" id="watchlist-manage-modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg class="svg-icon" viewBox="0 0 24 24">
+                        <path d="M3 3v18h18M7 16l4-4 4 4 5-6" />
+                    </svg>
+                    <span>จัดการรายการเฝ้าดู (Watchlist)</span>
+                </h3>
+                <button class="modal-close-btn" onclick="window.app.closeWatchlistModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <!-- Add Symbol Form -->
+                <div class="form-group" style="margin-bottom: 12px;">
+                    <label>เพิ่มคู่สินทรัพย์ใหม่ (Symbol):</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="add-watchlist-input" class="form-control"
+                            placeholder="เช่น XAUUSD, EURUSD, BTCUSDT, USOIL" style="text-transform: uppercase;"
+                            onkeydown="if(event.key==='Enter'){event.preventDefault();window.app.addWatchlistSymbol();}">
+                        <button type="button" class="tb-btn tb-btn-primary" onclick="window.app.addWatchlistSymbol()">+
+                            เพิ่ม</button>
+                    </div>
+                </div>
+
+                <!-- Quick Presets to Add -->
+                <div style="margin-bottom: 16px;">
+                    <span
+                        style="font-size: 10.5px; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 5px;">คู่สินทรัพย์แนะนำ
+                        (Quick Add):</span>
+                    <div class="balance-presets" id="watchlist-quick-presets"
+                        style="max-height: 90px; overflow-y: auto;">
+                        <!-- Generated dynamically by JS -->
+                    </div>
+                </div>
+
+                <!-- Current Watchlist Items with Move Up/Down & Delete -->
+                <div style="border-top: 1px solid rgba(255,255,255,0.04); padding-top: 12px;">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span
+                            style="font-weight: 700; font-size: 11.5px; color: #fff;">ลำดับคู่สินทรัพย์ปัจจุบัน:</span>
+                        <button type="button" class="btn-rr-chip" onclick="window.app.resetWatchlistDefaults()"
+                            style="font-size: 10px; color: var(--text-muted);">↺ คืนค่าเริ่มต้น</button>
+                    </div>
+                    <div id="watchlist-manage-items-list"
+                        style="max-height: 250px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 2px;">
+                        <!-- Rendered by JS -->
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
+                    <button type="button" class="tb-btn tb-btn-primary"
+                        onclick="window.app.closeWatchlistModal()">เสร็จสิ้น</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 13. PWA APP INSTALLATION GUIDANCE MODAL -->
+    <div class="modal-overlay" id="pwa-install-modal">
+        <div class="modal-content" style="max-width: 540px;">
+            <div class="modal-header">
+                <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg class="svg-icon" viewBox="0 0 24 24" style="color: #38bdf8;">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                    </svg>
+                    <span>ติดตั้ง TradingTools บนอุปกรณ์ของคุณ</span>
+                </h3>
+                <button class="modal-close-btn" onclick="window.app.closePWAInstallModal()">✕</button>
+            </div>
+            <div class="modal-body" style="padding: 20px;">
+                <!-- Native Install Action if supported -->
+                <div id="pwa-native-prompt"
+                    style="display: none; background: linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(99, 102, 241, 0.15)); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 10px; padding: 16px; margin-bottom: 20px; text-align: center;">
+                    <div style="font-weight: 700; font-size: 14px; color: #fff; margin-bottom: 6px;">✨
+                        ติดตั้งเป็นแอปพลิเคชัน Standalone ทันที</div>
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">เปิดใช้งานแบบเต็มจอ
+                        ไม่มีแถบ URL ประสิทธิภาพสูงเหมือน Native App</div>
+                    <button type="button" class="tb-btn tb-btn-primary" onclick="window.app.triggerPWAInstall()"
+                        style="margin: 0 auto; padding: 8px 24px; font-weight: 700;">
+                        📲 กดติดตั้งแอปทันที
+                    </button>
+                </div>
+
+                <div
+                    style="font-size: 12.5px; font-weight: 700; color: #fff; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+                    <span>📌 คำแนะนำการติดตั้งตามประเภทอุปกรณ์:</span>
+                </div>
+
+                <!-- Tabs or Cards for Device Types -->
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                    <!-- iOS / iPadOS -->
+                    <div
+                        style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 14px;">
+                        <div
+                            style="font-weight: 700; font-size: 12.5px; color: #38bdf8; display: flex; align-items: center; gap: 6px; margin-bottom: 8px;">
+                            <span>🍎 สำหรับ iPad / iPhone (Safari)</span>
+                        </div>
+                        <ol
+                            style="margin: 0; padding-left: 20px; font-size: 11.5px; color: var(--text-secondary); line-height: 1.7;">
+                            <li>เปิดเว็บไซต์นี้ด้วยเบราว์เซอร์ <strong>Safari</strong></li>
+                            <li>แตะที่ปุ่มแชร์ <strong>Share <svg class="svg-icon" viewBox="0 0 24 24"
+                                        style="width: 13px; height: 13px; vertical-align: middle;">
+                                        <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13" />
+                                    </svg></strong> (แถบด้านล่างหรือด้านบน)</li>
+                            <li>เลื่อนลงมาแล้วเลือก <strong>"เพิ่มไปยังหน้าจอโฮม" (Add to Home Screen)</strong></li>
+                            <li>กด <strong>"เพิ่ม" (Add)</strong> มุมขวาบน จะได้ไอคอนแอปบนหน้าจอ ใช้งานแบบเต็มจอ 100%
+                            </li>
+                        </ol>
+                    </div>
+
+                    <!-- Android -->
+                    <div
+                        style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 14px;">
+                        <div
+                            style="font-weight: 700; font-size: 12.5px; color: #10b981; display: flex; align-items: center; gap: 6px; margin-bottom: 8px;">
+                            <span>🤖 สำหรับ แท็บเล็ต / มือถือ Android (Chrome)</span>
+                        </div>
+                        <ol
+                            style="margin: 0; padding-left: 20px; font-size: 11.5px; color: var(--text-secondary); line-height: 1.7;">
+                            <li>เปิดเว็บไซต์นี้ด้วย <strong>Google Chrome</strong></li>
+                            <li>แตะปุ่มเมนู <strong>จุดสามจุด (⋮)</strong> มุมขวาบน</li>
+                            <li>เลือก <strong>"ติดตั้งแอป" (Install App)</strong> หรือ "เพิ่มลงในหน้าจอหลัก"</li>
+                            <li>ยืนยันการติดตั้ง แอปจะถูกติดตั้งใน Drawer และหน้าจอหลัก</li>
+                        </ol>
+                    </div>
+
+                    <!-- PC / Mac -->
+                    <div
+                        style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 14px;">
+                        <div
+                            style="font-weight: 700; font-size: 12.5px; color: #a855f7; display: flex; align-items: center; gap: 6px; margin-bottom: 8px;">
+                            <span>💻 สำหรับ Windows PC / Mac (Chrome / Edge)</span>
+                        </div>
+                        <ol
+                            style="margin: 0; padding-left: 20px; font-size: 11.5px; color: var(--text-secondary); line-height: 1.7;">
+                            <li>สังเกตไอคอน <strong>ติดตั้ง <svg class="svg-icon" viewBox="0 0 24 24"
+                                        style="width: 13px; height: 13px; vertical-align: middle;">
+                                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                                    </svg></strong> บนแถบที่อยู่ URL (Address bar)</li>
+                            <li>หรือกดปุ่มเมนู (⋮) แล้วเลือก <strong>"ติดตั้ง TradingTools..." (Install
+                                    TradingTools)</strong></li>
+                            <li>สามารถเปิดใช้งานเป็นหน้าต่างอิสระ ปักหมุดบน Taskbar ได้ทันที</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Force Update Section -->
+                <div style="margin-top: 16px; padding: 12px 14px; background: rgba(56, 189, 248, 0.05); border: 1px dashed rgba(56, 189, 248, 0.3); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                    <div style="font-size: 11.5px; color: var(--text-secondary);">
+                        <strong style="color: var(--text-primary);"><svg class="svg-icon" viewBox="0 0 24 24" style="width: 14px; height: 14px; vertical-align: middle; color: #38bdf8;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l5.67-5.67"/></svg> ตรวจพบเวอร์ชันใหม่หรือต้องการรีเฟรชระบบ:</strong>
+                        <div style="margin-top: 2px;">บังคับเคลียร์แคชและโหลดฟีเจอร์เวอร์ชันล่าสุดทั้งหมดลงเครื่องนี้ทันที</div>
+                    </div>
+                    <button type="button" class="tb-btn tb-btn-secondary" onclick="window.app.forceUpdateApp()" style="font-size: 11px; padding: 6px 12px; border-color: rgba(56,189,248,0.4); color: #38bdf8;">
+                        🔄 บังคับอัปเดตเดี๋ยวนี้ (Force Update v2.5.5)
+                    </button>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
+                    <button type="button" class="tb-btn tb-btn-primary"
+                        onclick="window.app.closePWAInstallModal()">เข้าใจแล้ว</button>
+                </div>
+            </div>
+        </div>
+    <!-- Modal: Text Annotation Prompt (Centered, Crisp & Highly Interactive) -->
+    <div class="modal-overlay custom-modal-overlay" id="text-annotation-modal" style="z-index: 100005;">
+        <div class="custom-modal-box" style="max-width: 390px; border-radius: 12px;">
+            <div class="modal-header">
+                <span class="modal-title">📝 ข้อความบนกราฟ (Text Annotation)</span>
+                <button type="button" class="modal-close-btn" onclick="window.app.closeTextModal()">✕</button>
+            </div>
+            <div class="modal-body" style="padding: 16px;">
+                <label style="display: block; font-size: 12px; font-weight: 700; margin-bottom: 6px;">พิมพ์ข้อความที่ต้องการแสดงบนชาร์ต:</label>
+                <input type="text" id="text-annotation-input" placeholder="เช่น Key Resistance, FVG, Breakout..."
+                    style="width: 100%; padding: 9px 12px; border-radius: 8px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.15); color: inherit; font-size: 13.5px; outline: none; box-sizing: border-box;"
+                    onkeydown="if(event.key==='Enter') window.app.confirmTextAnnotation();">
+                
+                <div style="margin-top: 14px; display: flex; gap: 10px; align-items: center;">
+                    <span style="font-size: 11.5px; opacity: 0.8;">สีข้อความ:</span>
+                    <input type="color" id="text-annotation-color" value="#38bdf8" style="width: 32px; height: 32px; border: none; border-radius: 6px; cursor: pointer; background: transparent;">
+                    <span style="font-size: 11.5px; opacity: 0.8; margin-left: auto;">ขนาด:</span>
+                    <select id="text-annotation-size" style="padding: 6px 10px; border-radius: 6px; background: rgba(15, 23, 42, 0.6); color: inherit; border: 1px solid rgba(255, 255, 255, 0.15); font-size: 12px;">
+                        <option value="12">12px (เล็ก)</option>
+                        <option value="14" selected>14px (มาตรฐาน)</option>
+                        <option value="16">16px (ปานกลาง)</option>
+                        <option value="18">18px (ใหญ่)</option>
+                        <option value="22">22px (ใหญ่พิเศษ)</option>
+                        <option value="28">28px (หัวข้อ)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 12px 16px; display: flex; justify-content: flex-end; gap: 8px;">
+                <button type="button" class="tb-btn" onclick="window.app.closeTextModal()">ยกเลิก</button>
+                <button type="button" class="tb-btn tb-btn-primary" onclick="window.app.confirmTextAnnotation()">ตกลง</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Exit Controls for Display Mode -->
+    <div class="display-mode-controls" id="display-mode-controls">
+        <button type="button" class="btn-exit-display" onclick="window.app.exitDisplayMode()" aria-label="ออกจาก Display Mode (Esc)">
+            <svg class="svg-icon" viewBox="0 0 24 24">
+                <path d="M4 14h6v6m10-10h-6V4m0 6l7-7M4 20l7-7" />
+            </svg>
+            <span class="exit-display-tooltip">ออกจาก Display Mode (Esc)</span>
+        </button>
+    </div>
+
+    <!-- Scripts (Cache-Busted v2.5.7) -->
+    <script src="js/resampler.js?v=2.5.7"></script>
+    <script src="js/indicators.js?v=2.5.7"></script>
+    <script src="js/volume-profile.js?v=2.5.7"></script>
+    <script src="js/footprint.js?v=2.5.7"></script>
+    <script src="js/patterns.js?v=2.5.7"></script>
+    <script src="js/watchlist.js?v=2.5.7"></script>
+    <script src="js/journal.js?v=2.5.7"></script>
+    <script src="js/chart-engine.js?v=2.5.7"></script>
+    <script src="js/replay-engine.js?v=2.5.7"></script>
+    <script src="js/app.js?v=2.5.7"></script>
+</body>
+
+</html>

@@ -1,0 +1,12 @@
+[
+  {
+    "ticket": 12345,
+    "symbol": "XAUUSD",
+    "action": "OPEN"
+  },
+  {
+    "ticket": 12345,
+    "symbol": "XAUUSD",
+    "action": "OPEN"
+  }
+]

@@ -1,0 +1,48 @@
+{
+  "name": "TradingTools Workstation & Chart Pro",
+  "short_name": "TradingTools",
+  "description": "ระบบวิเคราะห์กราฟเทรดระดับโปร Multi-Chart Grid, Volume Profile, Bar Replay & Trade Journal",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#0f1118",
+  "theme_color": "#13161f",
+  "categories": ["finance", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "เปิดกราฟทองคำ XAUUSD",
+      "short_name": "XAUUSD",
+      "description": "เปิดดูกราฟทองคำ Real-time Multi-Timeframe",
+      "url": "/?symbol=XAUUSD",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "บันทึกเทรด Trade Journal",
+      "short_name": "Journal",
+      "description": "เปิดดูปฏิทินบันทึกผลการเทรดและสถิติ",
+      "url": "/?view=journal",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
