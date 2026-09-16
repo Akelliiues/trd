@@ -20,6 +20,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 LIVE_RATES = {}
 LIVE_RATES_LOCK = threading.Lock()
+CANDLE_CACHE = {}
+CANDLE_CACHE_LOCK = threading.Lock()
 MT5_ACTIVE = False
 MT5_LAST_SEEN = 0
 
@@ -76,8 +78,11 @@ class TradingToolsHandler(http.server.SimpleHTTPRequestHandler):
         super().do_POST()
 
     def do_GET(self):
-        # API ส่งราคา Live Rates ล่าสุดจาก RAM Cache ระดับ Sub-Millisecond
-        if self.path.startswith('/api/live-rates') or self.path.startswith('/api/rates'):
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+
+        # 1. API ส่งราคา Live Rates ล่าสุดจาก RAM Cache ระดับ Sub-Millisecond
+        if path.startswith('/api/live-rates') or path.startswith('/api/rates'):
             with LIVE_RATES_LOCK:
                 rates_data = dict(LIVE_RATES)
 
@@ -91,6 +96,44 @@ class TradingToolsHandler(http.server.SimpleHTTPRequestHandler):
                 "rates": rates_data,
                 "mt5_active": MT5_ACTIVE and (time.time() - MT5_LAST_SEEN < 3),
                 "server_time": int(time.time())
+            }).encode('utf-8'))
+            return
+
+        # 2. API ส่งแท่งเทียน M1 สดล่าสุดจาก MT5 RAM Cache (Zero-Lag Sync)
+        if path == '/api/candles':
+            qs = urllib.parse.parse_qs(parsed.query)
+            symbol = qs.get('symbol', ['XAUUSD'])[0].upper()
+            try:
+                count = int(qs.get('count', [600])[0])
+            except Exception:
+                count = 600
+
+            candles = []
+            with CANDLE_CACHE_LOCK:
+                if symbol in CANDLE_CACHE and len(CANDLE_CACHE[symbol]) > 0:
+                    candles = CANDLE_CACHE[symbol][-count:]
+
+            if not candles:
+                # ลองโหลดจาก data/{symbol}_1m.json
+                data_file = os.path.join(BASE_DIR, "data", f"{symbol}_1m.json")
+                if os.path.exists(data_file):
+                    try:
+                        with open(data_file, "r", encoding="utf-8") as f:
+                            candles = json.load(f)[-count:]
+                    except Exception:
+                        candles = []
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "status": "ok",
+                "symbol": symbol,
+                "candles": candles,
+                "server_time": int(time.time()),
+                "count": len(candles)
             }).encode('utf-8'))
             return
 
@@ -235,11 +278,10 @@ def public_market_data_worker():
 
 
 def mt5_candle_sync_worker():
-    """Sync closed M1 candles from MT5 directly into data/{symbol}_1m.json every 5 seconds."""
+    """Sync closed M1 candles from MT5 directly into RAM CANDLE_CACHE & data/{symbol}_1m.json every 1.5 seconds with exact dynamic offset."""
     global MT5_ACTIVE, MT5_LAST_SEEN
-    offset_sec = 4 * 3600 # Broker time to Local Thai UTC+7 offset
     while True:
-        time.sleep(5)
+        time.sleep(1.5)
         if not MT5_ACTIVE:
             continue
         try:
@@ -265,9 +307,19 @@ def mt5_candle_sync_worker():
                 ("XAGUSD", silv_sym, 3)
             ]
 
+            # คำนวณค่า Offset เวลาจาก Broker สู่เวลาไทย (UTC+7) อัตโนมัติแม่นยำ 100%
+            ref_sym = gold_sym or eur_sym or btc_sym
+            offset_sec = 4 * 3600
+            if ref_sym:
+                t = mt5.symbol_info_tick(ref_sym)
+                if t:
+                    local_thai_now = int(time.time()) + (7 * 3600)
+                    hours_diff = round((local_thai_now - t.time) / 3600)
+                    offset_sec = hours_diff * 3600
+
             for target_name, sym, digits in sync_list:
                 if not sym: continue
-                rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M1, 0, 400)
+                rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M1, 0, 600)
                 if rates is not None and len(rates) > 0:
                     candles = []
                     for r in rates:
@@ -279,6 +331,10 @@ def mt5_candle_sync_worker():
                             "close": round(float(r['close']), digits),
                             "volume": int(r['tick_volume'])
                         })
+                    
+                    with CANDLE_CACHE_LOCK:
+                        CANDLE_CACHE[target_name] = candles
+
                     out_path = os.path.join(BASE_DIR, "data", f"{target_name}_1m.json")
                     with open(out_path, "w", encoding="utf-8") as f:
                         json.dump(candles, f)

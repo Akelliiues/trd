@@ -34,11 +34,12 @@ mimetypes.add_type('image/svg+xml', '.svg')
 mimetypes.add_type('application/javascript', '.js')
 
 # In-Memory Cache for Live Ticks & Market Prices (Multi-Source Sync)
-LIVE_RATES_CACHE = {
-    'XAUUSD': {'symbol': 'XAUUSD', 'bid': 2618.450, 'ask': 2618.600, 'close': 2618.450, 'digits': 3, 'time': int(time.time())},
-    'EURUSD': {'symbol': 'EURUSD', 'bid': 1.08450, 'ask': 1.08465, 'close': 1.08450, 'digits': 5, 'time': int(time.time())},
-    'BTCUSDT': {'symbol': 'BTCUSDT', 'bid': 62450.00, 'ask': 62455.00, 'close': 62450.00, 'digits': 2, 'time': int(time.time())}
-}
+LIVE_RATES_CACHE = {}
+LIVE_RATES_LOCK = threading.Lock()
+CANDLE_CACHE = {}
+CANDLE_CACHE_LOCK = threading.Lock()
+MT5_ACTIVE = False
+MT5_LAST_SEEN = 0
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
@@ -172,15 +173,57 @@ class ProductionHandler(http.server.SimpleHTTPRequestHandler):
 
         # API: ดึงราคา Live Rates ล่าสุด (ความเร็วสูงจาก RAM Cache ทันทีระดับ Sub-Millisecond)
         if path in ['/api/live-rates', '/api/rates']:
+            with LIVE_RATES_LOCK:
+                rates_data = dict(LIVE_RATES_CACHE)
+
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
             self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
             self.end_headers()
             self.wfile.write(json.dumps({
                 "status": "ok",
-                "rates": LIVE_RATES_CACHE,
+                "rates": rates_data,
+                "mt5_active": MT5_ACTIVE and (time.time() - MT5_LAST_SEEN < 3),
                 "server_time": int(time.time()),
-                "primary_source": "public_api_direct"
+                "primary_source": "mt5_live" if MT5_ACTIVE else "spot_market_direct"
+            }).encode('utf-8'))
+            return
+
+        # API: ส่งแท่งเทียน M1 สดล่าสุดจาก MT5 / RAM Cache (Zero-Lag Sync)
+        if path == '/api/candles':
+            qs = urllib.parse.parse_qs(parsed_url.query)
+            symbol = qs.get('symbol', ['XAUUSD'])[0].upper()
+            try:
+                count = int(qs.get('count', [600])[0])
+            except Exception:
+                count = 600
+
+            candles = []
+            with CANDLE_CACHE_LOCK:
+                if symbol in CANDLE_CACHE and len(CANDLE_CACHE[symbol]) > 0:
+                    candles = CANDLE_CACHE[symbol][-count:]
+
+            if not candles:
+                data_file = os.path.join(BASE_DIR, "data", f"{symbol}_1m.json")
+                if os.path.exists(data_file):
+                    try:
+                        with open(data_file, "r", encoding="utf-8") as f:
+                            candles = json.load(f)[-count:]
+                    except Exception:
+                        candles = []
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "status": "ok",
+                "symbol": symbol,
+                "candles": candles,
+                "server_time": int(time.time()),
+                "count": len(candles)
             }).encode('utf-8'))
             return
 
@@ -188,12 +231,14 @@ class ProductionHandler(http.server.SimpleHTTPRequestHandler):
         if path == '/api/health':
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             self.wfile.write(json.dumps({
                 "status": "healthy",
                 "app": "TradingTools Workstation",
                 "domain": "trd.ssotansum.com",
                 "timestamp": int(time.time()),
+                "mt5_active": MT5_ACTIVE,
                 "cached_symbols": list(LIVE_RATES_CACHE.keys())
             }).encode('utf-8'))
             return
@@ -309,6 +354,129 @@ def public_market_price_poller():
         except Exception:
             time.sleep(2)
 
+def mt5_candle_sync_worker():
+    """Sync closed M1 candles from MT5 directly into RAM CANDLE_CACHE & data/{symbol}_1m.json every 1.5 seconds."""
+    global MT5_ACTIVE, MT5_LAST_SEEN
+    while True:
+        time.sleep(1.5)
+        if not MT5_ACTIVE:
+            continue
+        try:
+            import MetaTrader5 as mt5
+            all_symbols = [s.name for s in mt5.symbols_get()] if mt5.symbols_get() else []
+            gold_sym = next((c for c in ['GOLDm#', 'GOLD', 'XAUUSD', 'XAUUSDm', 'GOLD#', 'XAUUSD_i', 'XAUUSD.r'] if c in all_symbols), None)
+            btc_sym = next((c for c in ['BTCUSD#', 'BTCUSD', 'BTCUSDT', 'BTCUSDm#'] if c in all_symbols), None)
+            eur_sym = next((c for c in ['EURUSD', 'EURUSDm', 'EURUSDm#', 'EURUSD#'] if c in all_symbols), None)
+            gbp_sym = next((c for c in ['GBPUSDm#', 'GBPUSD', 'GBPUSDm', 'GBPUSD#'] if c in all_symbols), None)
+            jpy_sym = next((c for c in ['USDJPYm#', 'USDJPY', 'USDJPYm', 'USDJPY#'] if c in all_symbols), None)
+            eth_sym = next((c for c in ['ETHUSD#', 'ETHUSD', 'ETHUSDT', 'ETHUSDm#'] if c in all_symbols), None)
+            sol_sym = next((c for c in ['SOLUSD#', 'SOLUSD', 'SOLUSDT', 'SOLUSDm#'] if c in all_symbols), None)
+            silv_sym = next((c for c in ['XAGUSD', 'SILVER', 'SILVERm#', 'XAGUSD#'] if c in all_symbols), None)
+
+            sync_list = [
+                ("XAUUSD", gold_sym, 3),
+                ("BTCUSDT", btc_sym, 2),
+                ("EURUSD", eur_sym, 5),
+                ("GBPUSD", gbp_sym, 5),
+                ("USDJPY", jpy_sym, 3),
+                ("ETHUSDT", eth_sym, 2),
+                ("SOLUSDT", sol_sym, 2),
+                ("XAGUSD", silv_sym, 3)
+            ]
+
+            ref_sym = gold_sym or eur_sym or btc_sym
+            offset_sec = 4 * 3600
+            if ref_sym:
+                t = mt5.symbol_info_tick(ref_sym)
+                if t:
+                    local_thai_now = int(time.time()) + (7 * 3600)
+                    hours_diff = round((local_thai_now - t.time) / 3600)
+                    offset_sec = hours_diff * 3600
+
+            for target_name, sym, digits in sync_list:
+                if not sym: continue
+                rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M1, 0, 600)
+                if rates is not None and len(rates) > 0:
+                    candles = []
+                    for r in rates:
+                        candles.append({
+                            "time": int(r['time']) + offset_sec,
+                            "open": round(float(r['open']), digits),
+                            "high": round(float(r['high']), digits),
+                            "low": round(float(r['low']), digits),
+                            "close": round(float(r['close']), digits),
+                            "volume": int(r['tick_volume'])
+                        })
+                    
+                    with CANDLE_CACHE_LOCK:
+                        CANDLE_CACHE[target_name] = candles
+
+                    out_path = os.path.join(BASE_DIR, "data", f"{target_name}_1m.json")
+                    with open(out_path, "w", encoding="utf-8") as f:
+                        json.dump(candles, f)
+        except Exception:
+            pass
+
+
+def mt5_live_ticks_worker():
+    """Stream broker tick quotes from MT5 every 60ms into LIVE_RATES_CACHE."""
+    global MT5_ACTIVE, MT5_LAST_SEEN
+    while True:
+        try:
+            import MetaTrader5 as mt5
+            if not mt5.initialize():
+                MT5_ACTIVE = False
+                time.sleep(4)
+                continue
+
+            MT5_ACTIVE = True
+            MT5_LAST_SEEN = time.time()
+            all_symbols = [s.name for s in mt5.symbols_get()] if mt5.symbols_get() else []
+
+            gold_sym = next((c for c in ['GOLDm#', 'GOLD', 'XAUUSD', 'XAUUSDm', 'GOLD#', 'XAUUSD_i', 'XAUUSD.r'] if c in all_symbols), None)
+            btc_sym = next((c for c in ['BTCUSD#', 'BTCUSD', 'BTCUSDT', 'BTCUSDm#'] if c in all_symbols), None)
+            eur_sym = next((c for c in ['EURUSD', 'EURUSDm', 'EURUSDm#', 'EURUSD#'] if c in all_symbols), None)
+            gbp_sym = next((c for c in ['GBPUSDm#', 'GBPUSD', 'GBPUSDm', 'GBPUSD#'] if c in all_symbols), None)
+            jpy_sym = next((c for c in ['USDJPYm#', 'USDJPY', 'USDJPYm', 'USDJPY#'] if c in all_symbols), None)
+            eth_sym = next((c for c in ['ETHUSD#', 'ETHUSD', 'ETHUSDT', 'ETHUSDm#'] if c in all_symbols), None)
+            sol_sym = next((c for c in ['SOLUSD#', 'SOLUSD', 'SOLUSDT', 'SOLUSDm#'] if c in all_symbols), None)
+            silv_sym = next((c for c in ['XAGUSD', 'SILVER', 'SILVERm#', 'XAGUSD#'] if c in all_symbols), None)
+
+            mapping = [
+                ("XAUUSD", gold_sym, 3),
+                ("BTCUSDT", btc_sym, 2),
+                ("EURUSD", eur_sym, 5),
+                ("GBPUSD", gbp_sym, 5),
+                ("USDJPY", jpy_sym, 3),
+                ("ETHUSDT", eth_sym, 2),
+                ("SOLUSDT", sol_sym, 2),
+                ("XAGUSD", silv_sym, 3)
+            ]
+
+            while True:
+                for target_name, sym, digits in mapping:
+                    if not sym: continue
+                    tick = mt5.symbol_info_tick(sym)
+                    if tick:
+                        with LIVE_RATES_LOCK:
+                            LIVE_RATES_CACHE[target_name] = {
+                                'symbol': target_name,
+                                'actual': sym,
+                                'bid': round(tick.bid, digits),
+                                'ask': round(tick.ask, digits),
+                                'close': round(tick.bid, digits),
+                                'time': int(time.time()),
+                                'digits': digits,
+                                'source': 'mt5_live'
+                            }
+                MT5_ACTIVE = True
+                MT5_LAST_SEEN = time.time()
+                time.sleep(0.06)
+        except Exception:
+            MT5_ACTIVE = False
+            time.sleep(3)
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="TradingTools Production Server")
@@ -318,8 +486,17 @@ if __name__ == "__main__":
 
     active_port = args.port
 
+    # 1. Start MT5 Background Workers if MetaTrader 5 is installed
+    try:
+        import MetaTrader5 as mt5
+        threading.Thread(target=mt5_live_ticks_worker, daemon=True).start()
+        threading.Thread(target=mt5_candle_sync_worker, daemon=True).start()
+        print(" [+] MT5 Background Synchronization Workers Started")
+    except ImportError:
+        print(" [!] MetaTrader5 library not present. Relying on Direct Spot Market Feeds.")
+
     if not args.no_market_poll:
-        # Start Market Data Poller Thread
+        # 2. Start Public Spot Market Data Poller Thread (Fallback)
         poller_thread = threading.Thread(target=public_market_price_poller, daemon=True)
         poller_thread.start()
 

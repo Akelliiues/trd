@@ -112,6 +112,10 @@ class ChartEngine {
         this.initBinanceWebSocket();
         this.startLiveTicker();
 
+        // Background M1 Candle Sync Engine (ดึงแท่งเทียนสดจาก MT5 Backend ต่อเนื่อง 0 Latency)
+        this.backgroundSyncInterval = null;
+        this.startBackgroundCandleSync();
+
         // ตัวจับเวลานับถอยหลังการจบแท่งเทียน (Candle Countdown Timer - MT5 / TradingView Style)
         this.countdownInterval = null;
         this.startCandleCountdownTimer();
@@ -290,31 +294,46 @@ class ChartEngine {
     }
 
     /**
-     * โหลด Raw Data จาก cache หรือจำลองข้อมูล M1
+     * โหลด Raw Data จาก MT5 API Endpoint หรือ data/{symbol}_1m.json
      */
     async getRawM1Data(symbol) {
         const now = Date.now();
         if (!this.rawCacheTime) this.rawCacheTime = {};
 
-        // ใช้ Cache สูงสุด 15 วินาที เพื่อให้ดึงแท่งเทียนปิดใหม่ล่าสุดจาก MT5 เสมอ
-        if (this.rawCache[symbol] && (now - (this.rawCacheTime[symbol] || 0) < 15000)) {
+        // ใช้ Cache ไม่เกิน 4 วินาที เพื่อให้กราฟดึงแท่งเทียนสดล่าสุดจาก MT5 เสมอ
+        if (this.rawCache[symbol] && (now - (this.rawCacheTime[symbol] || 0) < 4000)) {
             return this.rawCache[symbol];
         }
 
+        // 1. ดึงจาก RAM Cache Endpoint /api/candles (Realtime 0 Latency)
         try {
-            const resp = await fetch(`data/${symbol}_1m.json?t=${now}`);
+            const resp = await fetch(`/api/candles?symbol=${symbol}&count=1000&t=${now}`, { cache: 'no-store' });
             if (resp.ok) {
-                // ข้อมูลใน data/ ถูกซิงค์จาก MT5 พร้อมแปลงเป็นเวลาไทยเรียบร้อยแล้ว
+                const resJson = await resp.json();
+                if (resJson.status === 'ok' && resJson.candles && resJson.candles.length > 0) {
+                    this.rawCache[symbol] = resJson.candles;
+                    this.rawCacheTime[symbol] = now;
+                    return resJson.candles;
+                }
+            }
+        } catch (e) {}
+
+        // 2. Fallback ดึงจากไฟล์ static data/{symbol}_1m.json
+        try {
+            const resp = await fetch(`data/${symbol}_1m.json?t=${now}`, { cache: 'no-store' });
+            if (resp.ok) {
                 const data = await resp.json();
-                this.rawCache[symbol] = data;
-                this.rawCacheTime[symbol] = now;
-                return data;
+                if (data && data.length > 0) {
+                    this.rawCache[symbol] = data;
+                    this.rawCacheTime[symbol] = now;
+                    return data;
+                }
             }
         } catch (e) {
             console.warn(`Could not load local data for ${symbol}, generating dynamic series`, e);
         }
 
-        // Fallback generator พร้อมทศนิยม 3 ตำแหน่งสำหรับ Exness Gold
+        // 3. Fallback generator
         const basePrice = symbol.includes('BTC') ? 92000 : (symbol.includes('XAU') ? 4310.000 : 1.08500);
         const data = this.generateSampleData(symbol, basePrice, 1500);
         this.rawCache[symbol] = data;
@@ -2437,8 +2456,8 @@ class ChartEngine {
 
                 const lastCandle = cell.visibleCandles[cell.visibleCandles.length - 1];
 
-                // หากยังอยู่ในช่วงเวลาของแท่งเดิม ให้ขยับ High/Low/Close ของแท่งปัจจุบัน
-                if (lastCandle && (lastCandle.time === currentBucketTime || lastCandle.time > currentBucketTime - tfSeconds)) {
+                if (lastCandle && lastCandle.time === currentBucketTime) {
+                    // กำลังอยู่ในแท่งเวลาปัจจุบัน
                     lastCandle.high = Number(Math.max(lastCandle.high, livePrice).toFixed(tickData.decimals));
                     lastCandle.low = Number(Math.min(lastCandle.low, livePrice).toFixed(tickData.decimals));
                     lastCandle.close = livePrice;
@@ -2459,27 +2478,48 @@ class ChartEngine {
                             color: lastCandle.close >= lastCandle.open ? 'rgba(8, 153, 129, 0.4)' : 'rgba(242, 54, 69, 0.4)'
                         });
                     }
-                } else {
-                    // เปิดแท่งเทียนใหม่ตามรอบ Timeframe ถัดไป
+                } else if (lastCandle && currentBucketTime > lastCandle.time) {
+                    // เติมเต็มช่องว่างถ้ามีเวลาข้ามแท่ง (Gap filling เพื่อให้กราฟไหลลื่น ไม่มีช่องว่างแท่งหาย)
+                    const missingBars = Math.min(30, Math.floor((currentBucketTime - lastCandle.time) / tfSeconds));
+                    let prevClose = lastCandle.close;
+
+                    for (let step = 1; step <= missingBars; step++) {
+                        const barTime = lastCandle.time + (step * tfSeconds);
+                        const isFinalBar = (barTime === currentBucketTime);
+                        const barPrice = isFinalBar ? livePrice : prevClose;
+
+                        const newCandle = {
+                            time: barTime,
+                            open: prevClose,
+                            high: Number(Math.max(prevClose, barPrice).toFixed(tickData.decimals)),
+                            low: Number(Math.min(prevClose, barPrice).toFixed(tickData.decimals)),
+                            close: barPrice,
+                            volume: isFinalBar ? tickVol : Math.floor(Math.random() * 20) + 10
+                        };
+
+                        cell.visibleCandles.push(newCandle);
+                        cell.candleSeries.update(newCandle);
+
+                        if (cell.showVolume && cell.volumeSeries) {
+                            cell.volumeSeries.update({
+                                time: newCandle.time,
+                                value: newCandle.volume,
+                                color: newCandle.close >= newCandle.open ? 'rgba(8, 153, 129, 0.4)' : 'rgba(242, 54, 69, 0.4)'
+                            });
+                        }
+                        prevClose = barPrice;
+                    }
+                } else if (!lastCandle) {
                     const newCandle = {
                         time: currentBucketTime,
-                        open: lastCandle ? lastCandle.close : livePrice,
-                        high: Number(Math.max(lastCandle ? lastCandle.close : livePrice, livePrice).toFixed(tickData.decimals)),
-                        low: Number(Math.min(lastCandle ? lastCandle.close : livePrice, livePrice).toFixed(tickData.decimals)),
+                        open: livePrice,
+                        high: livePrice,
+                        low: livePrice,
                         close: livePrice,
                         volume: tickVol
                     };
-
                     cell.visibleCandles.push(newCandle);
                     cell.candleSeries.update(newCandle);
-
-                    if (cell.showVolume && cell.volumeSeries) {
-                        cell.volumeSeries.update({
-                            time: newCandle.time,
-                            value: newCandle.volume,
-                            color: newCandle.close >= newCandle.open ? 'rgba(8, 153, 129, 0.4)' : 'rgba(242, 54, 69, 0.4)'
-                        });
-                    }
                 }
             }
 
@@ -2497,6 +2537,85 @@ class ChartEngine {
                     window.replayEngine.updateFloatingPnL(cell.symbol, livePrice);
                 }
             }
+        }
+    }
+
+    startBackgroundCandleSync() {
+        if (this.backgroundSyncInterval) clearInterval(this.backgroundSyncInterval);
+
+        // ดึงแท่งเทียนปิดจริงจาก MT5 ทุกๆ 2.5 วินาทีแบบ Zero-Lag Background Sync
+        this.backgroundSyncInterval = setInterval(() => {
+            this.syncCandlesFromBackend();
+        }, 2500);
+
+        // เมื่อแท็บกลับมา Active (ผู้ใช้สลับหน้าจอกลับมา) ให้ซิงค์แท่งเทียนล่าสุดทันที
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                this.syncCandlesFromBackend(true);
+            }
+        });
+        window.addEventListener('focus', () => {
+            this.syncCandlesFromBackend(true);
+        });
+    }
+
+    async syncCandlesFromBackend(forceFullRefresh = false) {
+        if (this.replayTime !== null || (window.replayEngine && window.replayEngine.isActive)) return;
+        if (!this.charts || this.charts.length === 0) return;
+
+        const uniqueSymbols = [...new Set(this.charts.map(c => c.symbol))];
+
+        for (const sym of uniqueSymbols) {
+            try {
+                const resp = await fetch(`/api/candles?symbol=${sym}&count=300&t=${Date.now()}`, { cache: 'no-store' });
+                if (!resp.ok) continue;
+                const resJson = await resp.json();
+                if (resJson.status !== 'ok' || !resJson.candles || resJson.candles.length === 0) continue;
+
+                const freshCandles = resJson.candles;
+                this.rawCache[sym] = freshCandles;
+                this.rawCacheTime[sym] = Date.now();
+
+                const matchingCharts = this.charts.filter(c => c.symbol === sym);
+                for (const cell of matchingCharts) {
+                    if (cell.isRangeBar || cell.isTickBar) continue;
+                    
+                    const minutes = this.parseTimeframeToMinutes(cell.timeframe);
+                    const resampled = Resampler.resampleTimeframe(freshCandles, minutes);
+                    if (!resampled || resampled.length === 0) continue;
+
+                    if (!cell.visibleCandles || cell.visibleCandles.length === 0 || forceFullRefresh) {
+                        cell.rawM1 = freshCandles;
+                        cell.visibleCandles = resampled;
+                        cell.candleSeries.setData(resampled.map(c => ({
+                            time: c.time,
+                            open: c.open,
+                            high: c.high,
+                            low: c.low,
+                            close: c.close
+                        })));
+                    } else {
+                        // ผสานแท่งเทียนล่าสุดเข้ากับ visibleCandles อย่างราบรื่น
+                        const lastVisible = cell.visibleCandles[cell.visibleCandles.length - 1];
+                        const recentNew = resampled.slice(-8);
+
+                        for (const rc of recentNew) {
+                            const existingIdx = cell.visibleCandles.findIndex(vc => vc.time === rc.time);
+                            if (existingIdx !== -1) {
+                                cell.visibleCandles[existingIdx] = rc;
+                                cell.candleSeries.update(rc);
+                            } else if (rc.time > lastVisible.time) {
+                                cell.visibleCandles.push(rc);
+                                cell.candleSeries.update(rc);
+                            }
+                        }
+                    }
+
+                    if (cell.indicators && cell.indicators.length > 0) {
+                        this.recalculateIndicators(cell);
+                    }
+                }
+            } catch (e) {}
         }
     }
 
