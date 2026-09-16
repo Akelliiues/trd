@@ -375,11 +375,14 @@ def mt5_candle_sync_worker():
 
             sync_list = [
                 ("XAUUSD", gold_sym, 3),
+                ("BTCUSD", btc_sym, 2),
                 ("BTCUSDT", btc_sym, 2),
                 ("EURUSD", eur_sym, 5),
                 ("GBPUSD", gbp_sym, 5),
                 ("USDJPY", jpy_sym, 3),
+                ("ETHUSD", eth_sym, 2),
                 ("ETHUSDT", eth_sym, 2),
+                ("SOLUSD", sol_sym, 2),
                 ("SOLUSDT", sol_sym, 2),
                 ("XAGUSD", silv_sym, 3)
             ]
@@ -444,11 +447,14 @@ def mt5_live_ticks_worker():
 
             mapping = [
                 ("XAUUSD", gold_sym, 3),
+                ("BTCUSD", btc_sym, 2),
                 ("BTCUSDT", btc_sym, 2),
                 ("EURUSD", eur_sym, 5),
                 ("GBPUSD", gbp_sym, 5),
                 ("USDJPY", jpy_sym, 3),
+                ("ETHUSD", eth_sym, 2),
                 ("ETHUSDT", eth_sym, 2),
+                ("SOLUSD", sol_sym, 2),
                 ("SOLUSDT", sol_sym, 2),
                 ("XAGUSD", silv_sym, 3)
             ]

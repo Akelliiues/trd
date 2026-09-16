@@ -6,22 +6,24 @@
 class WatchlistManager {
     constructor() {
         this.defaultItems = [
-            { symbol: 'XAUUSD', name: 'Gold / US Dollar', price: 4302.529, change: 0.85, flag: 'red' },
-            { symbol: 'EURUSD', name: 'Euro / US Dollar', price: 1.14080, change: -0.21, flag: 'blue' },
-            { symbol: 'BTCUSDT', name: 'Bitcoin / Tether', price: 92450.00, change: 2.75, flag: 'green' },
-            { symbol: 'GBPUSD', name: 'British Pound / USD', price: 1.2985, change: -0.15, flag: 'green' },
-            { symbol: 'USDJPY', name: 'US Dollar / Yen', price: 154.20, change: 0.42, flag: 'none' },
-            { symbol: 'AUDUSD', name: 'Aussie / US Dollar', price: 0.6540, change: -0.08, flag: 'yellow' },
-            { symbol: 'XAGUSD', name: 'Silver / US Dollar', price: 31.42, change: 1.12, flag: 'purple' },
+            { symbol: 'XAUUSD', name: 'Gold / US Dollar', price: 4347.500, change: 0.85, flag: 'red' },
+            { symbol: 'BTCUSD', name: 'Bitcoin / US Dollar', price: 75780.00, change: 1.45, flag: 'green' },
+            { symbol: 'EURUSD', name: 'Euro / US Dollar', price: 1.15350, change: -0.21, flag: 'blue' },
+            { symbol: 'GBPUSD', name: 'British Pound / USD', price: 1.34460, change: -0.15, flag: 'green' },
+            { symbol: 'USDJPY', name: 'US Dollar / Yen', price: 155.100, change: 0.42, flag: 'none' },
+            { symbol: 'AUDUSD', name: 'Aussie / US Dollar', price: 0.65400, change: -0.08, flag: 'yellow' },
+            { symbol: 'XAGUSD', name: 'Silver / US Dollar', price: 31.420, change: 1.12, flag: 'purple' },
             { symbol: 'USOIL',   name: 'Crude Oil WTI', price: 71.30, change: -0.65, flag: 'none' },
-            { symbol: 'ETHUSDT', name: 'Ethereum / Tether', price: 3380.20, change: 1.84, flag: 'blue' },
-            { symbol: 'SOLUSDT', name: 'Solana / Tether', price: 215.40, change: 5.12, flag: 'red' }
+            { symbol: 'ETHUSD',  name: 'Ethereum / US Dollar', price: 2380.20, change: 1.84, flag: 'blue' },
+            { symbol: 'SOLUSD',  name: 'Solana / US Dollar', price: 125.40, change: 5.12, flag: 'red' }
         ];
 
         // คลังคู่สินทรัพย์แนะนำ (Catalogue)
         this.availablePresets = [
             { symbol: 'XAUUSD', name: 'Gold / US Dollar', category: 'Metals' },
             { symbol: 'XAGUSD', name: 'Silver / US Dollar', category: 'Metals' },
+            { symbol: 'BTCUSD', name: 'Bitcoin / US Dollar (MT5)', category: 'Crypto' },
+            { symbol: 'BTCUSDT', name: 'Bitcoin / Tether (Spot)', category: 'Crypto' },
             { symbol: 'EURUSD', name: 'Euro / US Dollar', category: 'Forex' },
             { symbol: 'GBPUSD', name: 'British Pound / USD', category: 'Forex' },
             { symbol: 'USDJPY', name: 'US Dollar / Japanese Yen', category: 'Forex' },
@@ -31,9 +33,10 @@ class WatchlistManager {
             { symbol: 'GBPJPY', name: 'British Pound / Yen', category: 'Forex' },
             { symbol: 'EURJPY', name: 'Euro / Japanese Yen', category: 'Forex' },
             { symbol: 'NZDUSD', name: 'New Zealand / US Dollar', category: 'Forex' },
-            { symbol: 'BTCUSDT', name: 'Bitcoin / Tether', category: 'Crypto' },
-            { symbol: 'ETHUSDT', name: 'Ethereum / Tether', category: 'Crypto' },
-            { symbol: 'SOLUSDT', name: 'Solana / Tether', category: 'Crypto' },
+            { symbol: 'ETHUSD', name: 'Ethereum / US Dollar (MT5)', category: 'Crypto' },
+            { symbol: 'ETHUSDT', name: 'Ethereum / Tether (Spot)', category: 'Crypto' },
+            { symbol: 'SOLUSD', name: 'Solana / US Dollar (MT5)', category: 'Crypto' },
+            { symbol: 'SOLUSDT', name: 'Solana / Tether (Spot)', category: 'Crypto' },
             { symbol: 'BNBUSDT', name: 'Binance Coin / Tether', category: 'Crypto' },
             { symbol: 'XRPUSDT', name: 'Ripple / Tether', category: 'Crypto' },
             { symbol: 'DOGEUSDT', name: 'Dogecoin / Tether', category: 'Crypto' },

@@ -84,7 +84,7 @@ class ChartEngine {
             { symbol: 'XAUUSD', timeframe: '15m', title: 'XAUUSD 15M (Execution)' },
             { symbol: 'XAUUSD', timeframe: '1h',  title: 'XAUUSD 1H (Intermediate)' },
             { symbol: 'XAUUSD', timeframe: '4h',  title: 'XAUUSD 4H (Higher Trend)' },
-            { symbol: 'BTCUSDT', timeframe: '15m', title: 'BTCUSDT 15M' },
+            { symbol: 'BTCUSD', timeframe: '15m', title: 'BTCUSD 15M' },
             { symbol: 'EURUSD', timeframe: '1h',  title: 'EURUSD 1H' },
             { symbol: 'GBPUSD', timeframe: '1h',  title: 'GBPUSD 1H' },
             { symbol: 'USDJPY', timeframe: '1h',  title: 'USDJPY 1H' },
@@ -92,9 +92,9 @@ class ChartEngine {
             // Additional configs for 16-chart grid
             { symbol: 'XAUUSD', timeframe: '5m',  title: 'XAUUSD 5M' },
             { symbol: 'XAUUSD', timeframe: '1d',  title: 'XAUUSD Daily' },
-            { symbol: 'BTCUSDT', timeframe: '1h', title: 'BTCUSDT 1H' },
-            { symbol: 'ETHUSDT', timeframe: '1h', title: 'ETHUSDT 1H' },
-            { symbol: 'SOLUSDT', timeframe: '1h', title: 'SOLUSDT 1H' },
+            { symbol: 'BTCUSD', timeframe: '1h',  title: 'BTCUSD 1H' },
+            { symbol: 'ETHUSD', timeframe: '1h',  title: 'ETHUSD 1H' },
+            { symbol: 'SOLUSD', timeframe: '1h',  title: 'SOLUSD 1H' },
             { symbol: 'USOIL',   timeframe: '1h', title: 'Crude Oil 1H' },
             { symbol: 'AUDUSD',  timeframe: '1h', title: 'AUDUSD 1H' },
             { symbol: 'NZDUSD',  timeframe: '1h', title: 'NZDUSD 1H' }
