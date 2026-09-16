@@ -108,6 +108,8 @@ class ChartEngine {
 
         // ตัวจับเวลาขยับกราฟแบบ Live Real-time Ticker ตาม Timeframe
         this.liveTickerInterval = null;
+        this.liveCryptoPrices = {};
+        this.initBinanceWebSocket();
         this.startLiveTicker();
 
         // ตัวจับเวลานับถอยหลังการจบแท่งเทียน (Candle Countdown Timer - MT5 / TradingView Style)
@@ -2247,15 +2249,51 @@ class ChartEngine {
     }
 
     // =========================================================
+    // ระบบดึงราคาตลาดโลกสดตรงจาก Binance WebSocket & Multi-Source
+    // =========================================================
+    initBinanceWebSocket() {
+        try {
+            const symbols = ['btcusdt', 'ethusdt', 'solusdt'];
+            const streams = symbols.map(s => `${s}@ticker`).join('/');
+            const wsUrl = `wss://stream.binance.com:9443/ws/${streams}`;
+            this.binanceWs = new WebSocket(wsUrl);
+
+            this.binanceWs.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data && data.s && data.c) {
+                        const sym = data.s.toUpperCase();
+                        const price = parseFloat(data.c);
+                        this.liveCryptoPrices[sym] = {
+                            price: price,
+                            time: Date.now()
+                        };
+                    }
+                } catch (err) {}
+            };
+
+            this.binanceWs.onerror = () => {
+                setTimeout(() => this.initBinanceWebSocket(), 6000);
+            };
+
+            this.binanceWs.onclose = () => {
+                setTimeout(() => this.initBinanceWebSocket(), 6000);
+            };
+        } catch (e) {
+            console.warn('Binance WebSocket init warning:', e);
+        }
+    }
+
+    // =========================================================
     // ระบบกราฟขยับตาม Timeframe และราคาตลาดจริงแบบ Live Realtime
     // =========================================================
     startLiveTicker() {
         if (this.liveTickerInterval) clearInterval(this.liveTickerInterval);
 
-        // รัน Ticker ทุกๆ 350ms สำหรับส่งผ่านราคา Tick จริงจาก MT5 แบบ Real-time ทันที
+        // รัน Ticker ทุกๆ 300ms สำหรับส่งผ่านราคา Tick จริงแบบ Real-time ทันที
         this.liveTickerInterval = setInterval(() => {
             this.tickLiveCandles();
-        }, 350);
+        }, 300);
     }
 
     async tickLiveCandles() {
@@ -2266,7 +2304,7 @@ class ChartEngine {
 
         if (!this.charts || this.charts.length === 0) return;
 
-        // ดึงราคา Realtime ล่าสุดจาก MT5 ผ่าน Local API
+        // ดึงราคา Realtime ล่าสุดจาก Server API (รองรับทั้ง MT5 และ Public Yahoo Finance / Binance)
         let liveRates = null;
         try {
             const resp = await fetch('/api/live-rates', { cache: 'no-store' });
@@ -2284,7 +2322,7 @@ class ChartEngine {
 
         for (const sym of activeSymbols) {
             const isGold = sym.includes('XAU') || sym.includes('GOLD');
-            const isForex = sym.includes('EUR') || sym.includes('GBP') || sym.includes('JPY') || sym.includes('AUD');
+            const isForex = sym.includes('EUR') || sym.includes('GBP') || sym.includes('JPY') || sym.includes('AUD') || sym.includes('NZD');
             const decimals = isGold ? 3 : (isForex ? 5 : 2);
 
             let newPrice = null;
@@ -2311,18 +2349,28 @@ class ChartEngine {
                     rateObj = liveRates['SOLUSDT'] || liveRates['SOLUSD'];
                 } else if (sym.includes('XAG') || sym.includes('SILV')) {
                     rateObj = liveRates['XAGUSD'] || liveRates['SILVER'];
+                } else if (sym.includes('AUD')) {
+                    rateObj = liveRates['AUDUSD'];
+                } else if (sym.includes('NZD')) {
+                    rateObj = liveRates['NZDUSD'];
+                } else if (sym.includes('OIL')) {
+                    rateObj = liveRates['USOIL'];
                 }
             }
 
-            if (rateObj && (rateObj.bid || rateObj.close)) {
-                // ราคาจริงตรงจาก MT5 (เช่น 4312.520)
+            // 1. ตรวจสอบราคา Crypto จาก Binance Direct WebSocket ก่อน (ความเร็วระดับมิลลิวินาที)
+            const cryptoLive = this.liveCryptoPrices[sym] || (sym.includes('BTC') ? this.liveCryptoPrices['BTCUSDT'] : (sym.includes('ETH') ? this.liveCryptoPrices['ETHUSDT'] : (sym.includes('SOL') ? this.liveCryptoPrices['SOLUSDT'] : null)));
+            if (cryptoLive && (Date.now() - cryptoLive.time < 6000)) {
+                newPrice = Number(cryptoLive.price.toFixed(decimals));
+            } else if (rateObj && (rateObj.bid || rateObj.close)) {
+                // 2. ราคาจริงจาก Server API (MT5 หรือ Public Live Stream)
                 const rawBid = rateObj.bid || rateObj.close;
                 newPrice = Number(rawBid.toFixed(decimals));
             } else {
-                // จำลองการขยับถ้า MT5 ปิดอยู่
+                // 3. จำลองการขยับยามฉุกเฉิน
                 let lastPrice = this.getCurrentPrice(sym);
                 if (!lastPrice) {
-                    lastPrice = isGold ? 4311.000 : (isForex ? 1.15360 : 92450.00);
+                    lastPrice = isGold ? 4311.000 : (isForex ? 1.15360 : 75800.00);
                 }
                 const delta = isGold ? (Math.random() - 0.49) * 0.12 : (isForex ? (Math.random() - 0.49) * 0.00015 : (Math.random() - 0.49) * 16.0);
                 newPrice = Number((lastPrice + delta).toFixed(decimals));

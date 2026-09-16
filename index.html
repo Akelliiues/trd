@@ -3,7 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#13161f">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -21,16 +22,16 @@
     <!-- Anti-Zoom & PWA Installed State Detection -->
     <script>
         // Prevent Whole-Page Zoom / Scale Distortion
-        (function() {
+        (function () {
             // 1. Prevent Ctrl + Wheel / Cmd + Wheel / Touchpad Pinch Zoom
-            window.addEventListener('wheel', function(e) {
+            window.addEventListener('wheel', function (e) {
                 if (e.ctrlKey || e.metaKey) {
                     e.preventDefault();
                 }
             }, { passive: false });
 
             // 2. Prevent Keyboard Zoom Shortcuts (Ctrl/Cmd +, -, 0, =)
-            window.addEventListener('keydown', function(e) {
+            window.addEventListener('keydown', function (e) {
                 if ((e.ctrlKey || e.metaKey) && (
                     e.key === '+' || e.key === '-' || e.key === '=' || e.key === '_' || e.key === '0' ||
                     e.code === 'NumpadAdd' || e.code === 'NumpadSubtract' || e.code === 'Equal' || e.code === 'Minus' ||
@@ -41,13 +42,13 @@
             });
 
             // 3. Prevent Safari / iOS Gesture Events
-            document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
-            document.addEventListener('gesturechange', function(e) { e.preventDefault(); });
-            document.addEventListener('gestureend', function(e) { e.preventDefault(); });
+            document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+            document.addEventListener('gesturechange', function (e) { e.preventDefault(); });
+            document.addEventListener('gestureend', function (e) { e.preventDefault(); });
 
             // 4. Prevent Double-Tap to Zoom on Mobile
             var lastTouchEnd = 0;
-            document.addEventListener('touchend', function(e) {
+            document.addEventListener('touchend', function (e) {
                 var now = Date.now();
                 if (now - lastTouchEnd <= 300) {
                     if (!['INPUT', 'TEXTAREA', 'SELECT', 'OPTION'].includes(e.target.tagName)) {
@@ -68,7 +69,7 @@
                 (localStorage.getItem('tradingtools_pwa_installed') === 'true')) {
                 document.documentElement.classList.add('app-is-installed');
             }
-        } catch (e) {}
+        } catch (e) { }
     </script>
 </head>
 
@@ -89,7 +90,8 @@
 
             <!-- Modern Pro Layout Selector (Glassmorphic Dropdown & Visual Grid Previews) -->
             <div class="custom-layout-container" id="custom-layout-container">
-                <button class="tb-btn tb-layout-trigger-btn" id="tb-layout-btn" onclick="window.app.toggleLayoutDropdown(event)"
+                <button class="tb-btn tb-layout-trigger-btn" id="tb-layout-btn"
+                    onclick="window.app.toggleLayoutDropdown(event)"
                     title="เลือกการจัดวางชาร์ต (Multi-Chart Grid Layout)">
                     <div class="layout-grid-preview tb-layout-visual-icon lp-2x2" id="tb-layout-visual-icon">
                         <div class="lp-cell"></div>
@@ -111,7 +113,8 @@
 
                     <div class="layout-cards-list">
                         <!-- 1x1 -->
-                        <button type="button" class="layout-card-item" data-layout="1x1" onclick="window.app.selectLayoutOption('1x1')">
+                        <button type="button" class="layout-card-item" data-layout="1x1"
+                            onclick="window.app.selectLayoutOption('1x1')">
                             <div class="layout-grid-preview lp-1x1">
                                 <div class="lp-cell"></div>
                             </div>
@@ -125,7 +128,8 @@
                         </button>
 
                         <!-- 2x1 -->
-                        <button type="button" class="layout-card-item" data-layout="2x1" onclick="window.app.selectLayoutOption('2x1')">
+                        <button type="button" class="layout-card-item" data-layout="2x1"
+                            onclick="window.app.selectLayoutOption('2x1')">
                             <div class="layout-grid-preview lp-2x1">
                                 <div class="lp-cell"></div>
                                 <div class="lp-cell"></div>
@@ -140,7 +144,8 @@
                         </button>
 
                         <!-- 2x2 -->
-                        <button type="button" class="layout-card-item active" data-layout="2x2" onclick="window.app.selectLayoutOption('2x2')">
+                        <button type="button" class="layout-card-item active" data-layout="2x2"
+                            onclick="window.app.selectLayoutOption('2x2')">
                             <div class="layout-grid-preview lp-2x2">
                                 <div class="lp-cell"></div>
                                 <div class="lp-cell"></div>
@@ -158,10 +163,17 @@
                         </button>
 
                         <!-- 4x2 -->
-                        <button type="button" class="layout-card-item" data-layout="4x2" onclick="window.app.selectLayoutOption('4x2')">
+                        <button type="button" class="layout-card-item" data-layout="4x2"
+                            onclick="window.app.selectLayoutOption('4x2')">
                             <div class="layout-grid-preview lp-4x2">
-                                <div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div>
-                                <div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
                             </div>
                             <div class="layout-item-content">
                                 <div class="layout-item-title">
@@ -173,12 +185,25 @@
                         </button>
 
                         <!-- 4x4 -->
-                        <button type="button" class="layout-card-item" data-layout="4x4" onclick="window.app.selectLayoutOption('4x4')">
+                        <button type="button" class="layout-card-item" data-layout="4x4"
+                            onclick="window.app.selectLayoutOption('4x4')">
                             <div class="layout-grid-preview lp-4x4">
-                                <div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div>
-                                <div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div>
-                                <div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div>
-                                <div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div><div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
+                                <div class="lp-cell"></div>
                             </div>
                             <div class="layout-item-content">
                                 <div class="layout-item-title">
@@ -191,12 +216,14 @@
                         </button>
 
                         <!-- Section Header: Asymmetric Pro Layouts -->
-                        <div class="layout-group-title" style="margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 6px;">
+                        <div class="layout-group-title"
+                            style="margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 6px;">
                             ✨ เลย์เอาท์ไม่สมมาตร (Asymmetric Pro)
                         </div>
 
                         <!-- 1L-2R -->
-                        <button type="button" class="layout-card-item" data-layout="1L-2R" onclick="window.app.selectLayoutOption('1L-2R')">
+                        <button type="button" class="layout-card-item" data-layout="1L-2R"
+                            onclick="window.app.selectLayoutOption('1L-2R')">
                             <div class="layout-grid-preview lp-1L-2R">
                                 <div class="lp-cell"></div>
                                 <div class="lp-cell"></div>
@@ -206,14 +233,16 @@
                                 <div class="layout-item-title">
                                     <span class="layout-name">ซ้าย 1 ขวา 2</span>
                                     <span class="layout-code">1L-2R</span>
-                                    <span class="layout-badge-popular" style="background: rgba(56,189,248,0.15); color: #38bdf8; border-color: rgba(56,189,248,0.3);">โปรฮิต</span>
+                                    <span class="layout-badge-popular"
+                                        style="background: rgba(56,189,248,0.15); color: #38bdf8; border-color: rgba(56,189,248,0.3);">โปรฮิต</span>
                                 </div>
                                 <div class="layout-item-sub">ซ้ายจอหลักวิเคราะห์ลึก ขวา 2 ไทม์เฟรมบนล่าง</div>
                             </div>
                         </button>
 
                         <!-- 2L-1R -->
-                        <button type="button" class="layout-card-item" data-layout="2L-1R" onclick="window.app.selectLayoutOption('2L-1R')">
+                        <button type="button" class="layout-card-item" data-layout="2L-1R"
+                            onclick="window.app.selectLayoutOption('2L-1R')">
                             <div class="layout-grid-preview lp-2L-1R">
                                 <div class="lp-cell"></div>
                                 <div class="lp-cell"></div>
@@ -229,7 +258,8 @@
                         </button>
 
                         <!-- 1T-2B -->
-                        <button type="button" class="layout-card-item" data-layout="1T-2B" onclick="window.app.selectLayoutOption('1T-2B')">
+                        <button type="button" class="layout-card-item" data-layout="1T-2B"
+                            onclick="window.app.selectLayoutOption('1T-2B')">
                             <div class="layout-grid-preview lp-1T-2B">
                                 <div class="lp-cell"></div>
                                 <div class="lp-cell"></div>
@@ -245,7 +275,8 @@
                         </button>
 
                         <!-- 2T-1B -->
-                        <button type="button" class="layout-card-item" data-layout="2T-1B" onclick="window.app.selectLayoutOption('2T-1B')">
+                        <button type="button" class="layout-card-item" data-layout="2T-1B"
+                            onclick="window.app.selectLayoutOption('2T-1B')">
                             <div class="layout-grid-preview lp-2T-1B">
                                 <div class="lp-cell"></div>
                                 <div class="lp-cell"></div>
@@ -261,7 +292,8 @@
                         </button>
 
                         <!-- 1L-3R -->
-                        <button type="button" class="layout-card-item" data-layout="1L-3R" onclick="window.app.selectLayoutOption('1L-3R')">
+                        <button type="button" class="layout-card-item" data-layout="1L-3R"
+                            onclick="window.app.selectLayoutOption('1L-3R')">
                             <div class="layout-grid-preview lp-1L-3R">
                                 <div class="lp-cell"></div>
                                 <div class="lp-cell"></div>
@@ -279,7 +311,8 @@
                         </button>
 
                         <!-- 3L-1R -->
-                        <button type="button" class="layout-card-item" data-layout="3L-1R" onclick="window.app.selectLayoutOption('3L-1R')">
+                        <button type="button" class="layout-card-item" data-layout="3L-1R"
+                            onclick="window.app.selectLayoutOption('3L-1R')">
                             <div class="layout-grid-preview lp-3L-1R">
                                 <div class="lp-cell"></div>
                                 <div class="lp-cell"></div>
@@ -297,7 +330,8 @@
                         </button>
 
                         <!-- 3x1 -->
-                        <button type="button" class="layout-card-item" data-layout="3x1" onclick="window.app.selectLayoutOption('3x1')">
+                        <button type="button" class="layout-card-item" data-layout="3x1"
+                            onclick="window.app.selectLayoutOption('3x1')">
                             <div class="layout-grid-preview lp-3x1">
                                 <div class="lp-cell"></div>
                                 <div class="lp-cell"></div>
@@ -319,9 +353,13 @@
 
             <!-- Modern Pro Timeframe Selector (Glassmorphic Dropdown & Quick Chips) -->
             <div class="custom-tf-container" id="custom-tf-container">
-                <button class="tb-btn tb-tf-trigger-btn" id="tb-timeframe-btn" onclick="window.app.toggleTimeframeDropdown(event)"
+                <button class="tb-btn tb-tf-trigger-btn" id="tb-timeframe-btn"
+                    onclick="window.app.toggleTimeframeDropdown(event)"
                     title="เลือก Timeframe และรูปแบบแท่งกราฟ (คลิกเพื่อเปิดแผงเลือกด่วน)">
-                    <svg class="svg-icon" style="color: #38bdf8;" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <svg class="svg-icon" style="color: #38bdf8;" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="9" />
+                        <polyline points="12 6 12 12 16 14" />
+                    </svg>
                     <span class="tf-btn-badge" id="tb-current-tf-badge">15m</span>
                     <span class="tf-btn-chevron" id="tb-tf-chevron">▾</span>
                 </button>
@@ -335,8 +373,10 @@
                             <span id="tf-menu-target-name">ชาร์ตที่ 1: XAUUSD (15m)</span>
                         </div>
                         <div class="tf-scope-switcher">
-                            <button type="button" class="tf-scope-btn active" id="tf-menu-scope-active" onclick="window.app.setTfDropdownScope(false, event)">ชาร์ตนี้</button>
-                            <button type="button" class="tf-scope-btn" id="tf-menu-scope-all" onclick="window.app.setTfDropdownScope(true, event)">ทุกชาร์ต</button>
+                            <button type="button" class="tf-scope-btn active" id="tf-menu-scope-active"
+                                onclick="window.app.setTfDropdownScope(false, event)">ชาร์ตนี้</button>
+                            <button type="button" class="tf-scope-btn" id="tf-menu-scope-all"
+                                onclick="window.app.setTfDropdownScope(true, event)">ทุกชาร์ต</button>
                         </div>
                     </div>
 
@@ -344,12 +384,18 @@
                     <div class="tf-menu-section">
                         <div class="tf-section-title">⚡ นาที (Minutes)</div>
                         <div class="tf-chips-grid">
-                            <button type="button" class="tf-menu-chip" data-tf="1m" onclick="window.app.selectTimeframeMenu('1m')">1m</button>
-                            <button type="button" class="tf-menu-chip" data-tf="3m" onclick="window.app.selectTimeframeMenu('3m')">3m</button>
-                            <button type="button" class="tf-menu-chip" data-tf="5m" onclick="window.app.selectTimeframeMenu('5m')">5m</button>
-                            <button type="button" class="tf-menu-chip" data-tf="15m" onclick="window.app.selectTimeframeMenu('15m')">15m</button>
-                            <button type="button" class="tf-menu-chip" data-tf="30m" onclick="window.app.selectTimeframeMenu('30m')">30m</button>
-                            <button type="button" class="tf-menu-chip" data-tf="45m" onclick="window.app.selectTimeframeMenu('45m')">45m</button>
+                            <button type="button" class="tf-menu-chip" data-tf="1m"
+                                onclick="window.app.selectTimeframeMenu('1m')">1m</button>
+                            <button type="button" class="tf-menu-chip" data-tf="3m"
+                                onclick="window.app.selectTimeframeMenu('3m')">3m</button>
+                            <button type="button" class="tf-menu-chip" data-tf="5m"
+                                onclick="window.app.selectTimeframeMenu('5m')">5m</button>
+                            <button type="button" class="tf-menu-chip" data-tf="15m"
+                                onclick="window.app.selectTimeframeMenu('15m')">15m</button>
+                            <button type="button" class="tf-menu-chip" data-tf="30m"
+                                onclick="window.app.selectTimeframeMenu('30m')">30m</button>
+                            <button type="button" class="tf-menu-chip" data-tf="45m"
+                                onclick="window.app.selectTimeframeMenu('45m')">45m</button>
                         </div>
                     </div>
 
@@ -357,12 +403,18 @@
                     <div class="tf-menu-section">
                         <div class="tf-section-title">⏰ ชั่วโมง & วัน (Hours & Higher TF)</div>
                         <div class="tf-chips-grid">
-                            <button type="button" class="tf-menu-chip" data-tf="1h" onclick="window.app.selectTimeframeMenu('1h')">1h</button>
-                            <button type="button" class="tf-menu-chip" data-tf="2h" onclick="window.app.selectTimeframeMenu('2h')">2h</button>
-                            <button type="button" class="tf-menu-chip" data-tf="4h" onclick="window.app.selectTimeframeMenu('4h')">4h</button>
-                            <button type="button" class="tf-menu-chip" data-tf="1d" onclick="window.app.selectTimeframeMenu('1d')">1D</button>
-                            <button type="button" class="tf-menu-chip" data-tf="1w" onclick="window.app.selectTimeframeMenu('1w')">1W</button>
-                            <button type="button" class="tf-menu-chip" data-tf="1M" onclick="window.app.selectTimeframeMenu('1M')">1M</button>
+                            <button type="button" class="tf-menu-chip" data-tf="1h"
+                                onclick="window.app.selectTimeframeMenu('1h')">1h</button>
+                            <button type="button" class="tf-menu-chip" data-tf="2h"
+                                onclick="window.app.selectTimeframeMenu('2h')">2h</button>
+                            <button type="button" class="tf-menu-chip" data-tf="4h"
+                                onclick="window.app.selectTimeframeMenu('4h')">4h</button>
+                            <button type="button" class="tf-menu-chip" data-tf="1d"
+                                onclick="window.app.selectTimeframeMenu('1d')">1D</button>
+                            <button type="button" class="tf-menu-chip" data-tf="1w"
+                                onclick="window.app.selectTimeframeMenu('1w')">1W</button>
+                            <button type="button" class="tf-menu-chip" data-tf="1M"
+                                onclick="window.app.selectTimeframeMenu('1M')">1M</button>
                         </div>
                     </div>
 
@@ -377,10 +429,15 @@
                                     <span class="tf-pro-subtext">ตัดสัญญาณหลอกตามระยะราคา</span>
                                 </div>
                                 <div class="tf-pro-options">
-                                    <button type="button" class="tf-pro-chip" data-tf="R-1" onclick="window.app.applyQuickRange(1.0)">R-1</button>
-                                    <button type="button" class="tf-pro-chip" data-tf="R-2" onclick="window.app.applyQuickRange(2.0)">R-2</button>
-                                    <button type="button" class="tf-pro-chip" data-tf="R-5" onclick="window.app.applyQuickRange(5.0)">R-5</button>
-                                    <button type="button" class="tf-pro-chip tf-pro-more" onclick="window.app.openRangeBarModal(); window.app.closeTimeframeDropdown();">⚙️ เพิ่มเติม...</button>
+                                    <button type="button" class="tf-pro-chip" data-tf="R-1"
+                                        onclick="window.app.applyQuickRange(1.0)">R-1</button>
+                                    <button type="button" class="tf-pro-chip" data-tf="R-2"
+                                        onclick="window.app.applyQuickRange(2.0)">R-2</button>
+                                    <button type="button" class="tf-pro-chip" data-tf="R-5"
+                                        onclick="window.app.applyQuickRange(5.0)">R-5</button>
+                                    <button type="button" class="tf-pro-chip tf-pro-more"
+                                        onclick="window.app.openRangeBarModal(); window.app.closeTimeframeDropdown();">⚙️
+                                        เพิ่มเติม...</button>
                                 </div>
                             </div>
 
@@ -391,10 +448,15 @@
                                     <span class="tf-pro-subtext">แท่งตามจำนวนคำสั่งซื้อขาย</span>
                                 </div>
                                 <div class="tf-pro-options">
-                                    <button type="button" class="tf-pro-chip" data-tf="T-100" onclick="window.app.applyQuickTick(100)">100T</button>
-                                    <button type="button" class="tf-pro-chip" data-tf="T-250" onclick="window.app.applyQuickTick(250)">250T</button>
-                                    <button type="button" class="tf-pro-chip" data-tf="T-500" onclick="window.app.applyQuickTick(500)">500T</button>
-                                    <button type="button" class="tf-pro-chip tf-pro-more" onclick="window.app.openTickBarModal(); window.app.closeTimeframeDropdown();">⚙️ เพิ่มเติม...</button>
+                                    <button type="button" class="tf-pro-chip" data-tf="T-100"
+                                        onclick="window.app.applyQuickTick(100)">100T</button>
+                                    <button type="button" class="tf-pro-chip" data-tf="T-250"
+                                        onclick="window.app.applyQuickTick(250)">250T</button>
+                                    <button type="button" class="tf-pro-chip" data-tf="T-500"
+                                        onclick="window.app.applyQuickTick(500)">500T</button>
+                                    <button type="button" class="tf-pro-chip tf-pro-more"
+                                        onclick="window.app.openTickBarModal(); window.app.closeTimeframeDropdown();">⚙️
+                                        เพิ่มเติม...</button>
                                 </div>
                             </div>
                         </div>
@@ -403,13 +465,18 @@
                     <!-- 4. Quick Custom Minutes Input & Full Manager -->
                     <div class="tf-menu-footer">
                         <div class="tf-quick-custom-bar">
-                            <span style="color: var(--text-secondary); font-size: 11px; font-weight: 600;">⚙️ ระบุนาที:</span>
+                            <span style="color: var(--text-secondary); font-size: 11px; font-weight: 600;">⚙️
+                                ระบุนาที:</span>
                             <div class="tf-quick-input-group">
-                                <input type="number" id="tf-menu-custom-min" min="1" max="1440" value="7" placeholder="เช่น 7">
-                                <button type="button" class="btn-quick-min-apply" onclick="window.app.applyMenuCustomMinutes()">ปรับใช้</button>
+                                <input type="number" id="tf-menu-custom-min" min="1" max="1440" value="7"
+                                    placeholder="เช่น 7">
+                                <button type="button" class="btn-quick-min-apply"
+                                    onclick="window.app.applyMenuCustomMinutes()">ปรับใช้</button>
                             </div>
                         </div>
-                        <button type="button" class="btn-tf-open-full-modal" onclick="window.app.openTimeframePicker(); window.app.closeTimeframeDropdown();" title="เปิดหน้าต่างตั้งค่า Timeframe แบบเต็ม">
+                        <button type="button" class="btn-tf-open-full-modal"
+                            onclick="window.app.openTimeframePicker(); window.app.closeTimeframeDropdown();"
+                            title="เปิดหน้าต่างตั้งค่า Timeframe แบบเต็ม">
                             📋 เปิดแผงควบคุม Timeframe แบบละเอียด...
                         </button>
                     </div>
@@ -439,11 +506,14 @@
                 <span>Sync</span>
             </button>
             <!-- Consolidated Tools Menu Dropdown (All Drawing & Measurement Tools) -->
-            <div class="custom-dropdown-container custom-tools-container custom-draw-container" id="custom-tools-container">
-                <button type="button" class="tb-btn tb-tools-trigger-btn" id="btn-toggle-tools-menu" onclick="window.app.toggleToolsMenu(event)"
+            <div class="custom-dropdown-container custom-tools-container custom-draw-container"
+                id="custom-tools-container">
+                <button type="button" class="tb-btn tb-tools-trigger-btn" id="btn-toggle-tools-menu"
+                    onclick="window.app.toggleToolsMenu(event)"
                     title="ชุดเครื่องมือวิเคราะห์ & วาดกราฟทั้งหมด (วัดระยะ, Fibo, เทรนด์ไลน์, แนวนอน, โซน ฯลฯ)">
                     <svg class="svg-icon" viewBox="0 0 24 24" style="color: #38bdf8;">
-                        <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+                        <path
+                            d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
                     </svg>
                     <span id="tb-current-tools-label">เครื่องมือ</span>
                     <span class="tb-dropdown-arrow">▾</span>
@@ -454,9 +524,11 @@
                     <div class="tools-palette-header draw-menu-header">
                         <div class="tools-palette-title-group">
                             <span class="tools-dot-indicator"></span>
-                            <span class="tools-palette-title draw-menu-title">🛠️ ชุดเครื่องมือวิเคราะห์ & วาดกราฟ</span>
+                            <span class="tools-palette-title draw-menu-title">🛠️ ชุดเครื่องมือวิเคราะห์ &
+                                วาดกราฟ</span>
                         </div>
-                        <button type="button" class="tools-palette-clear-btn draw-menu-clear-btn" onclick="window.app.clearCurrentChartDrawings()" title="ลบภาพวาดและเส้นทั้งหมดบนชาร์ตนี้">
+                        <button type="button" class="tools-palette-clear-btn draw-menu-clear-btn"
+                            onclick="window.app.clearCurrentChartDrawings()" title="ลบภาพวาดและเส้นทั้งหมดบนชาร์ตนี้">
                             🗑️ ล้างทั้งหมด
                         </button>
                     </div>
@@ -466,10 +538,12 @@
                         <div class="tools-section-title">📐 การวัดระยะ & ระดับราคา (Measure & Levels)</div>
                         <div class="tools-section-grid">
                             <!-- Measure Tool -->
-                            <button type="button" class="tool-palette-card" id="btn-toggle-measure" onclick="window.app.toggleMeasureFromPalette()">
+                            <button type="button" class="tool-palette-card" id="btn-toggle-measure"
+                                onclick="window.app.toggleMeasureFromPalette()">
                                 <div class="tool-card-icon measure-icon-box">
                                     <svg viewBox="0 0 24 24">
-                                        <path d="M21.3 15.3l-6.6 6.6a1 1 0 01-1.4 0l-11-11a1 1 0 010-1.4l6.6-6.6a1 1 0 011.4 0l11 11a1 1 0 010 1.4zM7.5 4.5l2 2m-1 3l3 3m-1 3l2 2m-1 3l3 3" />
+                                        <path
+                                            d="M21.3 15.3l-6.6 6.6a1 1 0 01-1.4 0l-11-11a1 1 0 010-1.4l6.6-6.6a1 1 0 011.4 0l11 11a1 1 0 010 1.4zM7.5 4.5l2 2m-1 3l3 3m-1 3l2 2m-1 3l3 3" />
                                     </svg>
                                 </div>
                                 <div class="tool-card-info">
@@ -482,7 +556,8 @@
                             </button>
 
                             <!-- Fibo Retracement -->
-                            <button type="button" class="tool-palette-card" id="btn-toggle-fibo" onclick="window.app.toggleFiboFromPalette()">
+                            <button type="button" class="tool-palette-card" id="btn-toggle-fibo"
+                                onclick="window.app.toggleFiboFromPalette()">
                                 <div class="tool-card-icon fibo-icon-box">
                                     <svg viewBox="0 0 24 24">
                                         <path d="M3 4h18M3 8h14M3 12h18M3 16h10M3 20h18M7 4v16" />
@@ -504,7 +579,8 @@
                         <div class="tools-section-title">📈 เส้นแนวโน้ม & ระดับราคา (Lines & Levels)</div>
                         <div class="tools-section-grid">
                             <!-- Trendline -->
-                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-trendline" data-tool="trendline" onclick="window.app.selectToolFromPalette('trendline')">
+                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-trendline"
+                                data-tool="trendline" onclick="window.app.selectToolFromPalette('trendline')">
                                 <div class="tool-card-icon">
                                     <svg viewBox="0 0 24 24">
                                         <circle cx="5" cy="19" r="2.5" />
@@ -521,7 +597,8 @@
                             </button>
 
                             <!-- Horizontal Line -->
-                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-horzline" data-tool="horzline" onclick="window.app.selectToolFromPalette('horzline')">
+                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-horzline"
+                                data-tool="horzline" onclick="window.app.selectToolFromPalette('horzline')">
                                 <div class="tool-card-icon">
                                     <svg viewBox="0 0 24 24">
                                         <line x1="2" y1="12" x2="22" y2="12" />
@@ -537,7 +614,8 @@
                             </button>
 
                             <!-- Horizontal Ray -->
-                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-horzray" data-tool="horzray" onclick="window.app.selectToolFromPalette('horzray')">
+                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-horzray"
+                                data-tool="horzray" onclick="window.app.selectToolFromPalette('horzray')">
                                 <div class="tool-card-icon">
                                     <svg viewBox="0 0 24 24">
                                         <circle cx="6" cy="12" r="2.5" />
@@ -553,7 +631,8 @@
                             </button>
 
                             <!-- Vertical Line -->
-                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-vertline" data-tool="vertline" onclick="window.app.selectToolFromPalette('vertline')">
+                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-vertline"
+                                data-tool="vertline" onclick="window.app.selectToolFromPalette('vertline')">
                                 <div class="tool-card-icon">
                                     <svg viewBox="0 0 24 24">
                                         <line x1="12" y1="2" x2="12" y2="22" />
@@ -575,7 +654,8 @@
                         <div class="tools-section-title">📦 โซนราคา & ข้อความ (Zones & Notes)</div>
                         <div class="tools-section-grid">
                             <!-- Rectangle -->
-                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-rectangle" data-tool="rectangle" onclick="window.app.selectToolFromPalette('rectangle')">
+                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-rectangle"
+                                data-tool="rectangle" onclick="window.app.selectToolFromPalette('rectangle')">
                                 <div class="tool-card-icon">
                                     <svg viewBox="0 0 24 24">
                                         <rect x="4" y="5" width="16" height="14" rx="2" />
@@ -592,7 +672,8 @@
                             </button>
 
                             <!-- Path -->
-                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-path" data-tool="path" onclick="window.app.selectToolFromPalette('path')">
+                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-path"
+                                data-tool="path" onclick="window.app.selectToolFromPalette('path')">
                                 <div class="tool-card-icon">
                                     <svg viewBox="0 0 24 24">
                                         <circle cx="4" cy="16" r="2" />
@@ -612,7 +693,8 @@
                             </button>
 
                             <!-- Text Note -->
-                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-text" data-tool="text" onclick="window.app.selectToolFromPalette('text')">
+                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-text"
+                                data-tool="text" onclick="window.app.selectToolFromPalette('text')">
                                 <div class="tool-card-icon">
                                     <svg viewBox="0 0 24 24">
                                         <path d="M4 7V4h16v3M9 20h6M12 4v16" />
@@ -637,14 +719,14 @@
 
         <div class="topbar-right">
             <!-- Auto-Scroll / Lock Latest Bar Trigger -->
-            <button class="tb-btn tb-btn-autoscroll active" id="btn-toggle-autoscroll" onclick="window.app.toggleAutoScroll()"
+            <button class="tb-btn tb-btn-autoscroll active" id="btn-toggle-autoscroll"
+                onclick="window.app.toggleAutoScroll()"
                 title="ล็อคกราฟแท่งสุดท้ายให้อยู่ในจอเสมอ (AutoScroll ทุก Timeframe)">
                 <svg class="svg-icon autoscroll-svg" viewBox="0 0 24 24" style="color: #38bdf8;">
                     <polyline points="13 17 18 12 13 7" />
                     <polyline points="6 17 11 12 6 7" />
                     <line x1="21" y1="6" x2="21" y2="18" />
                 </svg>
-                <span>AutoScroll</span>
                 <span class="autoscroll-dot"></span>
             </button>
 
@@ -673,7 +755,8 @@
                 title="สลับโหมดสว่าง / โหมดมืด (Light / Dark Mode)">
                 <svg class="svg-icon theme-icon-sun" id="theme-icon-sun" viewBox="0 0 24 24">
                     <circle cx="12" cy="12" r="4" />
-                    <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+                    <path
+                        d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
                 </svg>
                 <svg class="svg-icon theme-icon-moon" id="theme-icon-moon" viewBox="0 0 24 24" style="display: none;">
                     <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
@@ -689,8 +772,8 @@
                 </svg>
                 <span>Journal</span>
             </button>
-            <button class="tb-btn tb-btn-primary" id="btn-open-ai" onclick="window.app.openAICoach()" style="display: none;"
-                title="AI Trading Coach (วิเคราะห์จิตวิทยาและพฤติกรรมเทรด)">
+            <button class="tb-btn tb-btn-primary" id="btn-open-ai" onclick="window.app.openAICoach()"
+                style="display: none;" title="AI Trading Coach (วิเคราะห์จิตวิทยาและพฤติกรรมเทรด)">
                 <svg class="svg-icon" viewBox="0 0 24 24">
                     <polygon
                         points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
@@ -818,7 +901,8 @@
 
         <!-- RIGHT SIDEBAR (WATCHLIST & VIRTUAL TRADING PAD) -->
         <aside class="sidebar" id="app-sidebar">
-            <div class="sidebar-header" id="watchlist-header" onclick="window.app.toggleWatchlistCollapse()" title="แตะเพื่อยุบ/ขยายรายการเฝ้าดู (ขยาย Trade Pad เต็มพื้นที่)">
+            <div class="sidebar-header" id="watchlist-header" onclick="window.app.toggleWatchlistCollapse()"
+                title="แตะเพื่อยุบ/ขยายรายการเฝ้าดู (ขยาย Trade Pad เต็มพื้นที่)">
                 <div style="display: flex; align-items: center; gap: 6px;">
                     <span class="wl-collapse-arrow" id="wl-collapse-arrow">▾</span>
                     <svg class="svg-icon" viewBox="0 0 24 24">
@@ -844,7 +928,8 @@
                                 d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" />
                         </svg>
                     </button>
-                    <button class="btn-pad-gear" id="btn-collapse-watchlist" onclick="window.app.toggleWatchlistCollapse()" title="ยุบ/ขยายรายการเฝ้าดู">
+                    <button class="btn-pad-gear" id="btn-collapse-watchlist"
+                        onclick="window.app.toggleWatchlistCollapse()" title="ยุบ/ขยายรายการเฝ้าดู">
                         <span id="btn-collapse-wl-icon">▲</span>
                     </button>
                     <button class="sidebar-close-btn" onclick="window.app.toggleSidebar()"
@@ -905,7 +990,8 @@
                 <div class="pad-rr-bar">
                     <span class="pad-rr-label">Quick R:R:</span>
                     <div class="pad-rr-group">
-                        <button type="button" class="btn-rr-chip active" id="rr-chip-1" onclick="window.app.setQuickRR(1)">1:1</button>
+                        <button type="button" class="btn-rr-chip active" id="rr-chip-1"
+                            onclick="window.app.setQuickRR(1)">1:1</button>
                         <button type="button" class="btn-rr-chip" onclick="window.app.setQuickRR(1.5)">1:1.5</button>
                         <button type="button" class="btn-rr-chip" id="rr-chip-2"
                             onclick="window.app.setQuickRR(2)">1:2</button>
@@ -1635,19 +1721,25 @@
                 </div>
 
                 <div class="form-group">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                         <label style="margin-bottom: 0;">Stop Loss (SL - ราคา หรือระยะ Point):</label>
-                        <button type="button" class="btn-input-clear" onclick="window.app.clearEditSL()" title="ลบ SL ออกจากออเดอร์นี้">✕ ลบ SL</button>
+                        <button type="button" class="btn-input-clear" onclick="window.app.clearEditSL()"
+                            title="ลบ SL ออกจากออเดอร์นี้">✕ ลบ SL</button>
                     </div>
-                    <input type="number" id="edit-order-sl" class="form-control" step="any" placeholder="เว้นว่างหากไม่ต้องการตั้ง SL">
+                    <input type="number" id="edit-order-sl" class="form-control" step="any"
+                        placeholder="เว้นว่างหากไม่ต้องการตั้ง SL">
                 </div>
 
                 <div class="form-group" style="margin-top: 12px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                         <label style="margin-bottom: 0;">Take Profit (TP - ราคา หรือระยะ Point):</label>
-                        <button type="button" class="btn-input-clear" onclick="window.app.clearEditTP()" title="ลบ TP ออกจากออเดอร์นี้">✕ ลบ TP</button>
+                        <button type="button" class="btn-input-clear" onclick="window.app.clearEditTP()"
+                            title="ลบ TP ออกจากออเดอร์นี้">✕ ลบ TP</button>
                     </div>
-                    <input type="number" id="edit-order-tp" class="form-control" step="any" placeholder="เว้นว่างหากไม่ต้องการตั้ง TP">
+                    <input type="number" id="edit-order-tp" class="form-control" step="any"
+                        placeholder="เว้นว่างหากไม่ต้องการตั้ง TP">
                 </div>
 
                 <div class="pad-rr-bar" style="margin-top: 10px;">
@@ -2077,12 +2169,18 @@
                 </div>
 
                 <!-- Force Update Section -->
-                <div style="margin-top: 16px; padding: 12px 14px; background: rgba(56, 189, 248, 0.05); border: 1px dashed rgba(56, 189, 248, 0.3); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                <div
+                    style="margin-top: 16px; padding: 12px 14px; background: rgba(56, 189, 248, 0.05); border: 1px dashed rgba(56, 189, 248, 0.3); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
                     <div style="font-size: 11.5px; color: var(--text-secondary);">
-                        <strong style="color: var(--text-primary);"><svg class="svg-icon" viewBox="0 0 24 24" style="width: 14px; height: 14px; vertical-align: middle; color: #38bdf8;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l5.67-5.67"/></svg> ตรวจพบเวอร์ชันใหม่หรือต้องการรีเฟรชระบบ:</strong>
-                        <div style="margin-top: 2px;">บังคับเคลียร์แคชและโหลดฟีเจอร์เวอร์ชันล่าสุดทั้งหมดลงเครื่องนี้ทันที</div>
+                        <strong style="color: var(--text-primary);"><svg class="svg-icon" viewBox="0 0 24 24"
+                                style="width: 14px; height: 14px; vertical-align: middle; color: #38bdf8;">
+                                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l5.67-5.67" />
+                            </svg> ตรวจพบเวอร์ชันใหม่หรือต้องการรีเฟรชระบบ:</strong>
+                        <div style="margin-top: 2px;">
+                            บังคับเคลียร์แคชและโหลดฟีเจอร์เวอร์ชันล่าสุดทั้งหมดลงเครื่องนี้ทันที</div>
                     </div>
-                    <button type="button" class="tb-btn tb-btn-secondary" onclick="window.app.forceUpdateApp()" style="font-size: 11px; padding: 6px 12px; border-color: rgba(56,189,248,0.4); color: #38bdf8;">
+                    <button type="button" class="tb-btn tb-btn-secondary" onclick="window.app.forceUpdateApp()"
+                        style="font-size: 11px; padding: 6px 12px; border-color: rgba(56,189,248,0.4); color: #38bdf8;">
                         🔄 บังคับอัปเดตเดี๋ยวนี้ (Force Update v2.5.5)
                     </button>
                 </div>
@@ -2093,61 +2191,67 @@
                 </div>
             </div>
         </div>
-    <!-- Modal: Text Annotation Prompt (Centered, Crisp & Highly Interactive) -->
-    <div class="modal-overlay custom-modal-overlay" id="text-annotation-modal" style="z-index: 100005;">
-        <div class="custom-modal-box" style="max-width: 390px; border-radius: 12px;">
-            <div class="modal-header">
-                <span class="modal-title">📝 ข้อความบนกราฟ (Text Annotation)</span>
-                <button type="button" class="modal-close-btn" onclick="window.app.closeTextModal()">✕</button>
-            </div>
-            <div class="modal-body" style="padding: 16px;">
-                <label style="display: block; font-size: 12px; font-weight: 700; margin-bottom: 6px;">พิมพ์ข้อความที่ต้องการแสดงบนชาร์ต:</label>
-                <input type="text" id="text-annotation-input" placeholder="เช่น Key Resistance, FVG, Breakout..."
-                    style="width: 100%; padding: 9px 12px; border-radius: 8px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.15); color: inherit; font-size: 13.5px; outline: none; box-sizing: border-box;"
-                    onkeydown="if(event.key==='Enter') window.app.confirmTextAnnotation();">
-                
-                <div style="margin-top: 14px; display: flex; gap: 10px; align-items: center;">
-                    <span style="font-size: 11.5px; opacity: 0.8;">สีข้อความ:</span>
-                    <input type="color" id="text-annotation-color" value="#38bdf8" style="width: 32px; height: 32px; border: none; border-radius: 6px; cursor: pointer; background: transparent;">
-                    <span style="font-size: 11.5px; opacity: 0.8; margin-left: auto;">ขนาด:</span>
-                    <select id="text-annotation-size" style="padding: 6px 10px; border-radius: 6px; background: rgba(15, 23, 42, 0.6); color: inherit; border: 1px solid rgba(255, 255, 255, 0.15); font-size: 12px;">
-                        <option value="12">12px (เล็ก)</option>
-                        <option value="14" selected>14px (มาตรฐาน)</option>
-                        <option value="16">16px (ปานกลาง)</option>
-                        <option value="18">18px (ใหญ่)</option>
-                        <option value="22">22px (ใหญ่พิเศษ)</option>
-                        <option value="28">28px (หัวข้อ)</option>
-                    </select>
+        <!-- Modal: Text Annotation Prompt (Centered, Crisp & Highly Interactive) -->
+        <div class="modal-overlay custom-modal-overlay" id="text-annotation-modal" style="z-index: 100005;">
+            <div class="custom-modal-box" style="max-width: 390px; border-radius: 12px;">
+                <div class="modal-header">
+                    <span class="modal-title">📝 ข้อความบนกราฟ (Text Annotation)</span>
+                    <button type="button" class="modal-close-btn" onclick="window.app.closeTextModal()">✕</button>
+                </div>
+                <div class="modal-body" style="padding: 16px;">
+                    <label
+                        style="display: block; font-size: 12px; font-weight: 700; margin-bottom: 6px;">พิมพ์ข้อความที่ต้องการแสดงบนชาร์ต:</label>
+                    <input type="text" id="text-annotation-input" placeholder="เช่น Key Resistance, FVG, Breakout..."
+                        style="width: 100%; padding: 9px 12px; border-radius: 8px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.15); color: inherit; font-size: 13.5px; outline: none; box-sizing: border-box;"
+                        onkeydown="if(event.key==='Enter') window.app.confirmTextAnnotation();">
+
+                    <div style="margin-top: 14px; display: flex; gap: 10px; align-items: center;">
+                        <span style="font-size: 11.5px; opacity: 0.8;">สีข้อความ:</span>
+                        <input type="color" id="text-annotation-color" value="#38bdf8"
+                            style="width: 32px; height: 32px; border: none; border-radius: 6px; cursor: pointer; background: transparent;">
+                        <span style="font-size: 11.5px; opacity: 0.8; margin-left: auto;">ขนาด:</span>
+                        <select id="text-annotation-size"
+                            style="padding: 6px 10px; border-radius: 6px; background: rgba(15, 23, 42, 0.6); color: inherit; border: 1px solid rgba(255, 255, 255, 0.15); font-size: 12px;">
+                            <option value="12">12px (เล็ก)</option>
+                            <option value="14" selected>14px (มาตรฐาน)</option>
+                            <option value="16">16px (ปานกลาง)</option>
+                            <option value="18">18px (ใหญ่)</option>
+                            <option value="22">22px (ใหญ่พิเศษ)</option>
+                            <option value="28">28px (หัวข้อ)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer"
+                    style="padding: 12px 16px; display: flex; justify-content: flex-end; gap: 8px;">
+                    <button type="button" class="tb-btn" onclick="window.app.closeTextModal()">ยกเลิก</button>
+                    <button type="button" class="tb-btn tb-btn-primary"
+                        onclick="window.app.confirmTextAnnotation()">ตกลง</button>
                 </div>
             </div>
-            <div class="modal-footer" style="padding: 12px 16px; display: flex; justify-content: flex-end; gap: 8px;">
-                <button type="button" class="tb-btn" onclick="window.app.closeTextModal()">ยกเลิก</button>
-                <button type="button" class="tb-btn tb-btn-primary" onclick="window.app.confirmTextAnnotation()">ตกลง</button>
-            </div>
         </div>
-    </div>
 
-    <!-- Floating Exit Controls for Display Mode -->
-    <div class="display-mode-controls" id="display-mode-controls">
-        <button type="button" class="btn-exit-display" onclick="window.app.exitDisplayMode()" aria-label="ออกจาก Display Mode (Esc)">
-            <svg class="svg-icon" viewBox="0 0 24 24">
-                <path d="M4 14h6v6m10-10h-6V4m0 6l7-7M4 20l7-7" />
-            </svg>
-            <span class="exit-display-tooltip">ออกจาก Display Mode (Esc)</span>
-        </button>
-    </div>
+        <!-- Floating Exit Controls for Display Mode -->
+        <div class="display-mode-controls" id="display-mode-controls">
+            <button type="button" class="btn-exit-display" onclick="window.app.exitDisplayMode()"
+                aria-label="ออกจาก Display Mode (Esc)">
+                <svg class="svg-icon" viewBox="0 0 24 24">
+                    <path d="M4 14h6v6m10-10h-6V4m0 6l7-7M4 20l7-7" />
+                </svg>
+                <span class="exit-display-tooltip">ออกจาก Display Mode (Esc)</span>
+            </button>
+        </div>
 
-    <!-- Scripts (Cache-Busted v2.5.7) -->
-    <script src="js/resampler.js?v=2.5.7"></script>
-    <script src="js/indicators.js?v=2.5.7"></script>
-    <script src="js/volume-profile.js?v=2.5.7"></script>
-    <script src="js/footprint.js?v=2.5.7"></script>
-    <script src="js/patterns.js?v=2.5.7"></script>
-    <script src="js/watchlist.js?v=2.5.7"></script>
-    <script src="js/journal.js?v=2.5.7"></script>
-    <script src="js/chart-engine.js?v=2.5.7"></script>
-    <script src="js/replay-engine.js?v=2.5.7"></script>
-    <script src="js/app.js?v=2.5.7"></script>
+        <!-- Scripts (Cache-Busted v2.5.7) -->
+        <script src="js/resampler.js?v=2.5.7"></script>
+        <script src="js/indicators.js?v=2.5.7"></script>
+        <script src="js/volume-profile.js?v=2.5.7"></script>
+        <script src="js/footprint.js?v=2.5.7"></script>
+        <script src="js/patterns.js?v=2.5.7"></script>
+        <script src="js/watchlist.js?v=2.5.7"></script>
+        <script src="js/journal.js?v=2.5.7"></script>
+        <script src="js/chart-engine.js?v=2.5.7"></script>
+        <script src="js/replay-engine.js?v=2.5.7"></script>
+        <script src="js/app.js?v=2.5.7"></script>
 </body>
 
 </html>

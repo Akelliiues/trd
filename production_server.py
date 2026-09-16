@@ -224,51 +224,103 @@ class ProductionHandler(http.server.SimpleHTTPRequestHandler):
 
         super().do_GET()
 
+PUBLIC_SYMBOLS_MAP = {
+    'XAUUSD': {'yahoo': 'GC=F', 'digits': 3, 'spread': 0.15},
+    'EURUSD': {'yahoo': 'EURUSD=X', 'digits': 5, 'spread': 0.00015},
+    'GBPUSD': {'yahoo': 'GBPUSD=X', 'digits': 5, 'spread': 0.00018},
+    'USDJPY': {'yahoo': 'JPY=X', 'digits': 3, 'spread': 0.015},
+    'AUDUSD': {'yahoo': 'AUDUSD=X', 'digits': 5, 'spread': 0.00016},
+    'NZDUSD': {'yahoo': 'NZDUSD=X', 'digits': 5, 'spread': 0.00018},
+    'XAGUSD': {'yahoo': 'SI=F', 'digits': 3, 'spread': 0.015},
+    'USOIL':  {'yahoo': 'CL=F', 'digits': 2, 'spread': 0.03}
+}
+
 def public_market_price_poller():
     """
-    Background Feed Poller: ดึงราคาตลาดโลกสด (Binance & Open Rates) 
-    เพื่อให้กราฟบน Server ทำงานและกระพริบเรียลไทม์ 24/7 แม้ในขณะที่ MT5 ปิดอยู่
+    Background Feed Poller: ดึงราคาตลาดโลกสดจาก Binance และ Yahoo Finance จริง
+    เพื่อให้กราฟบน Server ทำงานและกระพริบเรียลไทม์ 24/7 แม้ในขณะที่ไม่ได้เปิด MT5
     """
     import urllib.request
+    last_candle_sync = 0
+
     while True:
         try:
-            # 1. Binance Crypto Live Prices
-            req = urllib.request.Request("https://api.binance.com/api/v3/ticker/price?symbols=%5B%22BTCUSDT%22,%22ETHUSDT%22,%22SOLUSDT%22%5D", headers={'User-Agent': 'TradingTools/1.0'})
-            with urllib.request.urlopen(req, timeout=4) as response:
-                if response.status == 200:
-                    data = json.loads(response.read().decode())
-                    for item in data:
-                        sym = item['symbol']
-                        px = float(item['price'])
-                        LIVE_RATES_CACHE[sym] = {
-                            'symbol': sym,
-                            'bid': round(px, 2),
-                            'ask': round(px + 0.05, 2),
-                            'close': round(px, 2),
-                            'digits': 2,
-                            'time': int(time.time())
-                        }
-        except:
-            pass
+            now = int(time.time())
+            # 1. Binance Crypto Live Prices (Realtime Sub-Second)
+            try:
+                req = urllib.request.Request("https://api.binance.com/api/v3/ticker/price?symbols=%5B%22BTCUSDT%22,%22ETHUSDT%22,%22SOLUSDT%22%5D", headers={'User-Agent': 'TradingTools/2.5.7'})
+                with urllib.request.urlopen(req, timeout=3) as response:
+                    if response.status == 200:
+                        data = json.loads(response.read().decode('utf-8'))
+                        for item in data:
+                            sym = item['symbol']
+                            px = float(item['price'])
+                            spread = 0.5 if sym == 'BTCUSDT' else (0.1 if sym == 'ETHUSDT' else 0.02)
+                            LIVE_RATES_CACHE[sym] = {
+                                'symbol': sym,
+                                'bid': round(px, 2),
+                                'ask': round(px + spread, 2),
+                                'close': round(px, 2),
+                                'digits': 2,
+                                'time': now,
+                                'source': 'binance_live'
+                            }
+            except Exception:
+                pass
 
-        # 2. Gold / Forex simulation micro-variation if MT5 is idle
-        try:
-            import random
-            gold = LIVE_RATES_CACHE.get('XAUUSD', {'close': 2618.50, 'digits': 3})
-            jitter = (random.random() - 0.49) * 0.15
-            new_close = round(gold['close'] + jitter, 3)
-            LIVE_RATES_CACHE['XAUUSD'] = {
-                'symbol': 'XAUUSD',
-                'bid': new_close,
-                'ask': round(new_close + 0.15, 3),
-                'close': new_close,
-                'digits': 3,
-                'time': int(time.time())
-            }
-        except:
-            pass
+            # 2. Forex & Commodities Live Prices (Yahoo Finance Real Market Data)
+            for target_sym, cfg in PUBLIC_SYMBOLS_MAP.items():
+                yahoo_sym = cfg['yahoo']
+                digits = cfg['digits']
+                spread = cfg['spread']
+                url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_sym}?interval=1m&range=1d"
+                try:
+                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+                    with urllib.request.urlopen(req, timeout=3) as resp:
+                        data = json.loads(resp.read().decode('utf-8'))
+                        result = data['chart']['result'][0]
+                        meta = result['meta']
+                        price = meta.get('regularMarketPrice')
+                        if price is not None:
+                            LIVE_RATES_CACHE[target_sym] = {
+                                'symbol': target_sym,
+                                'bid': round(price, digits),
+                                'ask': round(price + spread, digits),
+                                'close': round(price, digits),
+                                'digits': digits,
+                                'time': now,
+                                'source': 'yahoo_live'
+                            }
 
-        time.sleep(2)
+                        # Auto-update M1 candles in data/ directory
+                        if now - last_candle_sync > 30 and 'timestamp' in result:
+                            timestamps = result['timestamp']
+                            quotes = result['indicators']['quote'][0]
+                            candles = []
+                            offset_sec = 7 * 3600
+                            for i in range(len(timestamps)):
+                                if quotes['open'][i] is not None and quotes['close'][i] is not None:
+                                    candles.append({
+                                        "time": timestamps[i] + offset_sec,
+                                        "open": round(quotes['open'][i], digits),
+                                        "high": round(quotes['high'][i], digits),
+                                        "low": round(quotes['low'][i], digits),
+                                        "close": round(quotes['close'][i], digits),
+                                        "volume": int(quotes['volume'][i] or 100)
+                                    })
+                            if candles:
+                                out_path = os.path.join(BASE_DIR, "data", f"{target_sym}_1m.json")
+                                with open(out_path, "w", encoding="utf-8") as f:
+                                    json.dump(candles[-600:], f)
+                except Exception:
+                    pass
+
+            if now - last_candle_sync > 30:
+                last_candle_sync = now
+
+            time.sleep(1.5)
+        except Exception:
+            time.sleep(2)
 
 if __name__ == "__main__":
     import argparse
