@@ -305,20 +305,55 @@ class ChartEngine {
             return this.rawCache[symbol];
         }
 
-        // 1. ดึงจาก RAM Cache Endpoint /api/candles (Realtime 0 Latency)
+        // 1. ดึงจาก RAM Cache Endpoint /api/candles (Realtime 0 Latency จาก MT5 หรือ Server Poller)
         try {
             const resp = await fetch(`/api/candles?symbol=${symbol}&count=1000&t=${now}`, { cache: 'no-store' });
             if (resp.ok) {
                 const resJson = await resp.json();
                 if (resJson.status === 'ok' && resJson.candles && resJson.candles.length > 0) {
-                    this.rawCache[symbol] = resJson.candles;
-                    this.rawCacheTime[symbol] = now;
-                    return resJson.candles;
+                    const lastCandle = resJson.candles[resJson.candles.length - 1];
+                    const nowSec = Math.floor(Date.now() / 1000) + this.thailandOffset;
+                    // ถ้าแท่งเทียนที่ได้ไม่เก่าเกิน 30 นาที ให้ใช้งานได้ทันที
+                    if (nowSec - lastCandle.time < 1800) {
+                        this.rawCache[symbol] = resJson.candles;
+                        this.rawCacheTime[symbol] = now;
+                        return resJson.candles;
+                    }
                 }
             }
         } catch (e) {}
 
-        // 2. Fallback ดึงจากไฟล์ static data/{symbol}_1m.json
+        // 2. Direct Browser Fallback to Binance Spot Klines (PAXGUSDT 1:1 Spot Gold & Crypto 24/7)
+        const isGold = symbol.includes('XAU') || symbol.includes('GOLD');
+        const isBtc = symbol.includes('BTC');
+        const isEth = symbol.includes('ETH');
+        const isSol = symbol.includes('SOL');
+
+        if (isGold || isBtc || isEth || isSol) {
+            try {
+                let binanceSym = isGold ? 'PAXGUSDT' : (isBtc ? 'BTCUSDT' : (isEth ? 'ETHUSDT' : 'SOLUSDT'));
+                let decimals = isGold ? 3 : 2;
+                const bResp = await fetch(`https://api.binance.com/api/v3/klines?symbol=${binanceSym}&interval=1m&limit=600`);
+                if (bResp.ok) {
+                    const rawKlines = await bResp.json();
+                    if (Array.isArray(rawKlines) && rawKlines.length > 0) {
+                        const parsed = rawKlines.map(k => ({
+                            time: Math.floor(k[0] / 1000) + this.thailandOffset,
+                            open: Number(parseFloat(k[1]).toFixed(decimals)),
+                            high: Number(parseFloat(k[2]).toFixed(decimals)),
+                            low: Number(parseFloat(k[3]).toFixed(decimals)),
+                            close: Number(parseFloat(k[4]).toFixed(decimals)),
+                            volume: Math.round(parseFloat(k[5]))
+                        }));
+                        this.rawCache[symbol] = parsed;
+                        this.rawCacheTime[symbol] = now;
+                        return parsed;
+                    }
+                }
+            } catch (e) {}
+        }
+
+        // 3. Fallback ดึงจากไฟล์ static data/{symbol}_1m.json
         try {
             const resp = await fetch(`data/${symbol}_1m.json?t=${now}`, { cache: 'no-store' });
             if (resp.ok) {
@@ -333,8 +368,8 @@ class ChartEngine {
             console.warn(`Could not load local data for ${symbol}, generating dynamic series`, e);
         }
 
-        // 3. Fallback generator
-        const basePrice = symbol.includes('BTC') ? 92000 : (symbol.includes('XAU') ? 4310.000 : 1.08500);
+        // 4. Fallback generator
+        const basePrice = symbol.includes('BTC') ? 76000 : (symbol.includes('XAU') ? 4345.000 : 1.15300);
         const data = this.generateSampleData(symbol, basePrice, 1500);
         this.rawCache[symbol] = data;
         this.rawCacheTime[symbol] = now;

@@ -165,11 +165,33 @@ class TradingToolsHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
 
+def fetch_binance_klines(binance_sym, count=600, digits=2):
+    try:
+        url = f"https://api.binance.com/api/v3/klines?symbol={binance_sym}&interval=1m&limit={count}"
+        req = urllib.request.Request(url, headers={'User-Agent': 'TradingTools/2.5.7'})
+        with urllib.request.urlopen(req, timeout=3.5) as resp:
+            raw = json.loads(resp.read().decode('utf-8'))
+            candles = []
+            offset_sec = 7 * 3600
+            for k in raw:
+                t = int(k[0] / 1000) + offset_sec
+                candles.append({
+                    "time": t,
+                    "open": round(float(k[1]), digits),
+                    "high": round(float(k[2]), digits),
+                    "low": round(float(k[3]), digits),
+                    "close": round(float(k[4]), digits),
+                    "volume": int(float(k[5]))
+                })
+            return candles
+    except Exception:
+        return []
+
+
 def public_market_data_worker():
     """
     Spot Market Data Fallback Worker:
-    - Runs 24/7. When MT5 is not connected, it feeds real-time Spot Gold & Forex prices.
-    - Uses Binance PAXGUSDT (1:1 Spot Gold) for XAUUSD so prices match Exness/Spot Gold (no COMEX futures spread).
+    - Runs 24/7. When MT5 is not connected, it feeds real-time Spot Gold (PAXGUSDT 1:1), Crypto, & Forex prices and candles.
     """
     global MT5_ACTIVE, MT5_LAST_SEEN
     last_candle_sync = 0
@@ -179,7 +201,7 @@ def public_market_data_worker():
             now = int(time.time())
             is_mt5_live = MT5_ACTIVE and (now - MT5_LAST_SEEN < 3)
 
-            # 1. Fetch Binance Spot Gold (PAXGUSDT) & Crypto (BTC, ETH, SOL)
+            # 1. ดึงราคา Ticker สดจาก Binance (Spot Gold & Crypto)
             try:
                 url = "https://api.binance.com/api/v3/ticker/price?symbols=%5B%22PAXGUSDT%22,%22BTCUSDT%22,%22ETHUSDT%22,%22SOLUSDT%22%5D"
                 req = urllib.request.Request(url, headers={'User-Agent': 'TradingTools/2.5.7'})
@@ -190,7 +212,6 @@ def public_market_data_worker():
                             sym = item['symbol']
                             price = float(item['price'])
                             if sym == 'PAXGUSDT':
-                                # Only update XAUUSD from Spot Gold if MT5 is NOT actively streaming
                                 if not is_mt5_live:
                                     LIVE_RATES['XAUUSD'] = {
                                         'symbol': 'XAUUSD',
@@ -203,7 +224,7 @@ def public_market_data_worker():
                                     }
                             else:
                                 spread = 0.5 if sym == 'BTCUSDT' else (0.1 if sym == 'ETHUSDT' else 0.02)
-                                if not is_mt5_live or sym not in LIVE_RATES:
+                                if not is_mt5_live:
                                     LIVE_RATES[sym] = {
                                         'symbol': sym,
                                         'bid': round(price, 2),
@@ -213,13 +234,60 @@ def public_market_data_worker():
                                         'digits': 2,
                                         'source': 'binance_live'
                                     }
+                                    if sym == 'BTCUSDT':
+                                        LIVE_RATES['BTCUSD'] = dict(LIVE_RATES[sym], symbol='BTCUSD')
+                                    elif sym == 'ETHUSDT':
+                                        LIVE_RATES['ETHUSD'] = dict(LIVE_RATES[sym], symbol='ETHUSD')
+                                    elif sym == 'SOLUSDT':
+                                        LIVE_RATES['SOLUSD'] = dict(LIVE_RATES[sym], symbol='SOLUSD')
             except Exception:
                 pass
 
-            # 2. Fetch Forex & Commodities from Yahoo Finance (if MT5 not live)
+            # 2. เมื่อ MT5 ไม่ได้เปิด: ดึงแท่งเทียน M1 สดต่อเนื่องจาก Binance (Gold + Crypto) ทุกๆ 4 วินาที
+            if not is_mt5_live and (now - last_candle_sync >= 4):
+                last_candle_sync = now
+
+                # 2.1 Spot Gold (XAUUSD) จาก Binance PAXGUSDT
+                gold_candles = fetch_binance_klines("PAXGUSDT", count=600, digits=3)
+                if gold_candles:
+                    with CANDLE_CACHE_LOCK:
+                        CANDLE_CACHE['XAUUSD'] = gold_candles
+                    out_path = os.path.join(BASE_DIR, "data", "XAUUSD_1m.json")
+                    with open(out_path, "w", encoding="utf-8") as f:
+                        json.dump(gold_candles, f)
+
+                # 2.2 Bitcoin (BTCUSD & BTCUSDT)
+                btc_candles = fetch_binance_klines("BTCUSDT", count=600, digits=2)
+                if btc_candles:
+                    with CANDLE_CACHE_LOCK:
+                        CANDLE_CACHE['BTCUSD'] = btc_candles
+                        CANDLE_CACHE['BTCUSDT'] = btc_candles
+                    with open(os.path.join(BASE_DIR, "data", "BTCUSD_1m.json"), "w", encoding="utf-8") as f:
+                        json.dump(btc_candles, f)
+                    with open(os.path.join(BASE_DIR, "data", "BTCUSDT_1m.json"), "w", encoding="utf-8") as f:
+                        json.dump(btc_candles, f)
+
+                # 2.3 Ethereum & Solana
+                eth_candles = fetch_binance_klines("ETHUSDT", count=600, digits=2)
+                if eth_candles:
+                    with CANDLE_CACHE_LOCK:
+                        CANDLE_CACHE['ETHUSD'] = eth_candles
+                        CANDLE_CACHE['ETHUSDT'] = eth_candles
+                    with open(os.path.join(BASE_DIR, "data", "ETHUSD_1m.json"), "w", encoding="utf-8") as f:
+                        json.dump(eth_candles, f)
+
+                sol_candles = fetch_binance_klines("SOLUSDT", count=600, digits=2)
+                if sol_candles:
+                    with CANDLE_CACHE_LOCK:
+                        CANDLE_CACHE['SOLUSD'] = sol_candles
+                        CANDLE_CACHE['SOLUSDT'] = sol_candles
+                    with open(os.path.join(BASE_DIR, "data", "SOLUSD_1m.json"), "w", encoding="utf-8") as f:
+                        json.dump(sol_candles, f)
+
+            # 3. Forex & Commodities จาก Yahoo Finance
             for target_sym, cfg in PUBLIC_SYMBOLS_MAP.items():
                 if is_mt5_live and target_sym in LIVE_RATES:
-                    continue # Keep MT5 live rate
+                    continue
 
                 yahoo_sym = cfg['yahoo']
                 digits = cfg['digits']
@@ -245,8 +313,7 @@ def public_market_data_worker():
                                         'source': 'yahoo_live'
                                     }
 
-                        # Periodic candle file update (every 30 seconds when MT5 is offline)
-                        if not is_mt5_live and (now - last_candle_sync > 30) and 'timestamp' in result:
+                        if not is_mt5_live and 'timestamp' in result:
                             timestamps = result['timestamp']
                             quotes = result['indicators']['quote'][0]
                             candles = []
@@ -262,15 +329,14 @@ def public_market_data_worker():
                                         "volume": int(quotes['volume'][i] or 100)
                                     })
                             if candles:
+                                with CANDLE_CACHE_LOCK:
+                                    CANDLE_CACHE[target_sym] = candles
                                 out_path = os.path.join(BASE_DIR, "data", f"{target_sym}_1m.json")
                                 os.makedirs(os.path.dirname(out_path), exist_ok=True)
                                 with open(out_path, "w", encoding="utf-8") as f:
                                     json.dump(candles[-600:], f)
                 except Exception:
                     pass
-
-            if now - last_candle_sync > 30:
-                last_candle_sync = now
 
             time.sleep(1.2)
         except Exception:

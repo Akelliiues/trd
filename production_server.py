@@ -255,9 +255,32 @@ PUBLIC_SYMBOLS_MAP = {
     'USOIL':  {'yahoo': 'CL=F', 'digits': 2, 'spread': 0.03}
 }
 
+def fetch_binance_klines(binance_sym, count=600, digits=2):
+    try:
+        url = f"https://api.binance.com/api/v3/klines?symbol={binance_sym}&interval=1m&limit={count}"
+        req = urllib.request.Request(url, headers={'User-Agent': 'TradingTools/2.5.7'})
+        with urllib.request.urlopen(req, timeout=3.5) as resp:
+            raw = json.loads(resp.read().decode('utf-8'))
+            candles = []
+            offset_sec = 7 * 3600
+            for k in raw:
+                t = int(k[0] / 1000) + offset_sec
+                candles.append({
+                    "time": t,
+                    "open": round(float(k[1]), digits),
+                    "high": round(float(k[2]), digits),
+                    "low": round(float(k[3]), digits),
+                    "close": round(float(k[4]), digits),
+                    "volume": int(float(k[5]))
+                })
+            return candles
+    except Exception:
+        return []
+
+
 def public_market_price_poller():
     """
-    Background Feed Poller: ดึงราคาตลาดโลกสดจาก Binance (Spot Gold & Crypto) และ Yahoo Finance
+    Background Feed Poller: ดึงราคาและแท่งเทียนตลาดโลกสดจาก Binance (Spot Gold & Crypto) และ Yahoo Finance
     เพื่อให้กราฟบน Server ทำงานและกระพริบเรียลไทม์ 24/7 แม้ในขณะที่ไม่ได้เปิด MT5
     """
     import urllib.request
@@ -266,6 +289,8 @@ def public_market_price_poller():
     while True:
         try:
             now = int(time.time())
+            is_mt5_live = MT5_ACTIVE and (now - MT5_LAST_SEEN < 3)
+
             # 1. Binance Crypto & Spot Gold (PAXGUSDT) Live Prices (Realtime Sub-Second)
             try:
                 req = urllib.request.Request("https://api.binance.com/api/v3/ticker/price?symbols=%5B%22PAXGUSDT%22,%22BTCUSDT%22,%22ETHUSDT%22,%22SOLUSDT%22%5D", headers={'User-Agent': 'TradingTools/2.5.7'})
@@ -276,32 +301,83 @@ def public_market_price_poller():
                             sym = item['symbol']
                             px = float(item['price'])
                             if sym == 'PAXGUSDT':
-                                # Spot Gold OTC Price (ตรงกับ Exness/XM ไม่ใช่ COMEX Futures)
-                                LIVE_RATES_CACHE['XAUUSD'] = {
-                                    'symbol': 'XAUUSD',
-                                    'bid': round(px, 3),
-                                    'ask': round(px + 0.15, 3),
-                                    'close': round(px, 3),
-                                    'digits': 3,
-                                    'time': now,
-                                    'source': 'spot_gold_live'
-                                }
+                                # Spot Gold OTC Price (ตรงกับ Exness/XM)
+                                if not is_mt5_live:
+                                    with LIVE_RATES_LOCK:
+                                        LIVE_RATES_CACHE['XAUUSD'] = {
+                                            'symbol': 'XAUUSD',
+                                            'bid': round(px, 3),
+                                            'ask': round(px + 0.15, 3),
+                                            'close': round(px, 3),
+                                            'digits': 3,
+                                            'time': now,
+                                            'source': 'spot_gold_live'
+                                        }
                             else:
                                 spread = 0.5 if sym == 'BTCUSDT' else (0.1 if sym == 'ETHUSDT' else 0.02)
-                                LIVE_RATES_CACHE[sym] = {
-                                    'symbol': sym,
-                                    'bid': round(px, 2),
-                                    'ask': round(px + spread, 2),
-                                    'close': round(px, 2),
-                                    'digits': 2,
-                                    'time': now,
-                                    'source': 'binance_live'
-                                }
+                                if not is_mt5_live:
+                                    with LIVE_RATES_LOCK:
+                                        LIVE_RATES_CACHE[sym] = {
+                                            'symbol': sym,
+                                            'bid': round(px, 2),
+                                            'ask': round(px + spread, 2),
+                                            'close': round(px, 2),
+                                            'digits': 2,
+                                            'time': now,
+                                            'source': 'binance_live'
+                                        }
+                                        if sym == 'BTCUSDT':
+                                            LIVE_RATES_CACHE['BTCUSD'] = dict(LIVE_RATES_CACHE[sym], symbol='BTCUSD')
+                                        elif sym == 'ETHUSDT':
+                                            LIVE_RATES_CACHE['ETHUSD'] = dict(LIVE_RATES_CACHE[sym], symbol='ETHUSD')
+                                        elif sym == 'SOLUSDT':
+                                            LIVE_RATES_CACHE['SOLUSD'] = dict(LIVE_RATES_CACHE[sym], symbol='SOLUSD')
             except Exception:
                 pass
 
-            # 2. Forex & Commodities Live Prices (Yahoo Finance Real Market Data)
+            # 2. เมื่อ MT5 ไม่ได้เปิด: ดึงแท่งเทียน M1 สดต่อเนื่องจาก Binance (Gold + Crypto) ทุกๆ 4 วินาที
+            if not is_mt5_live and (now - last_candle_sync >= 4):
+                last_candle_sync = now
+
+                gold_candles = fetch_binance_klines("PAXGUSDT", count=600, digits=3)
+                if gold_candles:
+                    with CANDLE_CACHE_LOCK:
+                        CANDLE_CACHE['XAUUSD'] = gold_candles
+                    out_path = os.path.join(BASE_DIR, "data", "XAUUSD_1m.json")
+                    with open(out_path, "w", encoding="utf-8") as f:
+                        json.dump(gold_candles, f)
+
+                btc_candles = fetch_binance_klines("BTCUSDT", count=600, digits=2)
+                if btc_candles:
+                    with CANDLE_CACHE_LOCK:
+                        CANDLE_CACHE['BTCUSD'] = btc_candles
+                        CANDLE_CACHE['BTCUSDT'] = btc_candles
+                    with open(os.path.join(BASE_DIR, "data", "BTCUSD_1m.json"), "w", encoding="utf-8") as f:
+                        json.dump(btc_candles, f)
+                    with open(os.path.join(BASE_DIR, "data", "BTCUSDT_1m.json"), "w", encoding="utf-8") as f:
+                        json.dump(btc_candles, f)
+
+                eth_candles = fetch_binance_klines("ETHUSDT", count=600, digits=2)
+                if eth_candles:
+                    with CANDLE_CACHE_LOCK:
+                        CANDLE_CACHE['ETHUSD'] = eth_candles
+                        CANDLE_CACHE['ETHUSDT'] = eth_candles
+                    with open(os.path.join(BASE_DIR, "data", "ETHUSD_1m.json"), "w", encoding="utf-8") as f:
+                        json.dump(eth_candles, f)
+
+                sol_candles = fetch_binance_klines("SOLUSDT", count=600, digits=2)
+                if sol_candles:
+                    with CANDLE_CACHE_LOCK:
+                        CANDLE_CACHE['SOLUSD'] = sol_candles
+                        CANDLE_CACHE['SOLUSDT'] = sol_candles
+                    with open(os.path.join(BASE_DIR, "data", "SOLUSD_1m.json"), "w", encoding="utf-8") as f:
+                        json.dump(sol_candles, f)
+
+            # 3. Forex & Commodities Live Prices (Yahoo Finance Real Market Data)
             for target_sym, cfg in PUBLIC_SYMBOLS_MAP.items():
+                if is_mt5_live and target_sym in LIVE_RATES_CACHE:
+                    continue
+
                 yahoo_sym = cfg['yahoo']
                 digits = cfg['digits']
                 spread = cfg['spread']
@@ -314,18 +390,19 @@ def public_market_price_poller():
                         meta = result['meta']
                         price = meta.get('regularMarketPrice')
                         if price is not None:
-                            LIVE_RATES_CACHE[target_sym] = {
-                                'symbol': target_sym,
-                                'bid': round(price, digits),
-                                'ask': round(price + spread, digits),
-                                'close': round(price, digits),
-                                'digits': digits,
-                                'time': now,
-                                'source': 'yahoo_live'
-                            }
+                            with LIVE_RATES_LOCK:
+                                if not is_mt5_live or target_sym not in LIVE_RATES_CACHE:
+                                    LIVE_RATES_CACHE[target_sym] = {
+                                        'symbol': target_sym,
+                                        'bid': round(price, digits),
+                                        'ask': round(price + spread, digits),
+                                        'close': round(price, digits),
+                                        'digits': digits,
+                                        'time': now,
+                                        'source': 'yahoo_live'
+                                    }
 
-                        # Auto-update M1 candles in data/ directory
-                        if now - last_candle_sync > 30 and 'timestamp' in result:
+                        if not is_mt5_live and 'timestamp' in result:
                             timestamps = result['timestamp']
                             quotes = result['indicators']['quote'][0]
                             candles = []
@@ -341,14 +418,13 @@ def public_market_price_poller():
                                         "volume": int(quotes['volume'][i] or 100)
                                     })
                             if candles:
+                                with CANDLE_CACHE_LOCK:
+                                    CANDLE_CACHE[target_sym] = candles
                                 out_path = os.path.join(BASE_DIR, "data", f"{target_sym}_1m.json")
                                 with open(out_path, "w", encoding="utf-8") as f:
                                     json.dump(candles[-600:], f)
                 except Exception:
                     pass
-
-            if now - last_candle_sync > 30:
-                last_candle_sync = now
 
             time.sleep(1.5)
         except Exception:
