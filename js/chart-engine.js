@@ -109,6 +109,9 @@ class ChartEngine {
         // ตัวจับเวลาขยับกราฟแบบ Live Real-time Ticker ตาม Timeframe
         this.liveTickerInterval = null;
         this.liveCryptoPrices = {};
+        this.cachedLiveRates = {};
+        this.sseEventSource = null;
+        this.initLiveStreamSSE();
         this.initBinanceWebSocket();
         this.startLiveTicker();
 
@@ -323,16 +326,15 @@ class ChartEngine {
             }
         } catch (e) {}
 
-        // 2. Direct Browser Fallback to Binance Spot Klines (PAXGUSDT 1:1 Spot Gold & Crypto 24/7)
-        const isGold = symbol.includes('XAU') || symbol.includes('GOLD');
+        // 2. Direct Browser Fallback to Binance Spot Klines (Crypto 24/7)
         const isBtc = symbol.includes('BTC');
         const isEth = symbol.includes('ETH');
         const isSol = symbol.includes('SOL');
 
-        if (isGold || isBtc || isEth || isSol) {
+        if (isBtc || isEth || isSol) {
             try {
-                let binanceSym = isGold ? 'PAXGUSDT' : (isBtc ? 'BTCUSDT' : (isEth ? 'ETHUSDT' : 'SOLUSDT'));
-                let decimals = isGold ? 3 : 2;
+                let binanceSym = isBtc ? 'BTCUSDT' : (isEth ? 'ETHUSDT' : 'SOLUSDT');
+                let decimals = 2;
                 const bResp = await fetch(`https://api.binance.com/api/v3/klines?symbol=${binanceSym}&interval=1m&limit=600`);
                 if (bResp.ok) {
                     const rawKlines = await bResp.json();
@@ -2303,7 +2305,341 @@ class ChartEngine {
     }
 
     // =========================================================
-    // ระบบดึงราคาตลาดโลกสดตรงจาก Binance WebSocket (Spot Gold & Crypto)
+    // ระบบ Realtime SSE Stream (Sub-Millisecond Zero-Lag จาก Server)
+    // ส่งข้อมูลราคา Tick จริงและแท่งเทียนแท้จาก MT5 / IC Markets เข้าสู่หน้าจอโดยตรง
+    // =========================================================
+    initLiveStreamSSE() {
+        try {
+            if (this.sseEventSource) {
+                this.sseEventSource.close();
+            }
+            this.sseEventSource = new EventSource('/api/live-stream');
+
+            this.sseEventSource.addEventListener('rates_init', (event) => {
+                try {
+                    const rates = JSON.parse(event.data);
+                    if (rates && typeof rates === 'object') {
+                        this.cachedLiveRates = Object.assign(this.cachedLiveRates || {}, rates);
+                    }
+                } catch (e) {}
+            });
+
+            // 1. Tick จาก IC Markets ECN (Institutional Base Feed)
+            this.sseEventSource.addEventListener('tick', (event) => {
+                try {
+                    const tick = JSON.parse(event.data);
+                    if (tick && tick.symbol) {
+                        this.handleLiveTickStream(tick);
+                    }
+                } catch (e) {}
+            });
+
+            // 2. MT5 Turbo Boost Tick (เมื่อเปิด MT5 จะนำไมโครทิคมาออสซิลเลตราคาเพื่อความเรียลไทม์สูงสุด)
+            this.sseEventSource.addEventListener('mt5_tick', (event) => {
+                try {
+                    const tick = JSON.parse(event.data);
+                    if (tick && tick.symbol) {
+                        this.handleMT5BoostTick(tick);
+                    }
+                } catch (e) {}
+            });
+
+            // 3. แท่งเทียนสดจาก IC Markets ECN
+            this.sseEventSource.addEventListener('candle_update', (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data && data.symbol && data.candle) {
+                        this.handleLiveCandleStream(data.symbol, data.candle);
+                    }
+                } catch (e) {}
+            });
+
+            // 4. สแนปช็อตแท่งเทียน IC Markets เมื่อเริ่มต้นระบบ
+            this.sseEventSource.addEventListener('candles_snapshot', (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data && data.symbol && data.candles) {
+                        this.handleCandlesSnapshot(data);
+                    }
+                } catch (e) {}
+            });
+
+            this.sseEventSource.onerror = () => {
+                // เบราว์เซอร์จะเชื่อมต่อใหม่ให้อัตโนมัติ (EventSource auto-reconnect)
+            };
+        } catch (err) {
+            console.warn('Live Stream SSE init warning:', err);
+        }
+    }
+
+    handleCandlesSnapshot(data) {
+        if (!data || !data.symbol || !data.candles || data.candles.length === 0) return;
+        const sym = data.symbol;
+        this.rawCache[sym] = data.candles;
+        this.rawCacheTime[sym] = Date.now();
+        if (this.charts) {
+            for (const cell of this.charts) {
+                if ((cell.symbol === sym || (sym === 'XAUUSD' && (cell.symbol.includes('XAU') || cell.symbol.includes('GOLD')))) && (!cell.visibleCandles || cell.visibleCandles.length < 50)) {
+                    this.loadChartData(cell.index, cell.symbol, cell.timeframe);
+                }
+            }
+        }
+    }
+
+    handleMT5BoostTick(tick) {
+        if (!tick || !tick.symbol) return;
+        this.lastMT5BoostTime = Date.now();
+        this.isMT5BoostActive = true;
+
+        const sym = tick.symbol;
+        const price = tick.bid !== undefined ? tick.bid : (tick.close !== undefined ? tick.close : tick.lp);
+        if (price === undefined || price === null || isNaN(price)) return;
+        const decimals = tick.digits !== undefined ? tick.digits : (sym.includes('XAU') || sym.includes('GOLD') ? 3 : (sym.includes('JPY') ? 3 : (sym.includes('EUR') || sym.includes('GBP') ? 5 : 2)));
+
+        if (sym === 'XAUUSD' || sym.includes('XAU') || sym.includes('GOLD')) {
+            this.goldAnchorICPrice = price;
+            if (this.lastPaxgPrice) {
+                this.goldAnchorPaxgPrice = this.lastPaxgPrice;
+                this.goldDelta = this.goldAnchorICPrice - this.goldAnchorPaxgPrice;
+            }
+        }
+
+        if (!this.cachedLiveRates) this.cachedLiveRates = {};
+        const cached = Object.assign({}, tick, { source: 'mt5_boost', mt5_active: true });
+        this.cachedLiveRates[sym] = cached;
+        if (sym === 'XAUUSD') {
+            this.cachedLiveRates['GOLD'] = cached;
+            this.cachedLiveRates['GOLDm#'] = cached;
+            this.cachedLiveRates['GOLD#'] = cached;
+            this.cachedLiveRates['XAUUSDm'] = cached;
+        }
+
+        // อัปเดตราคาใน Watchlist ทันทีด้วยความเร็วสูงจาก MT5
+        if (window.watchlist && window.watchlist.items) {
+            const item = window.watchlist.items.find(i => i.symbol === sym || (sym === 'XAUUSD' && (i.symbol === 'GOLD' || i.symbol === 'GOLDm#')));
+            if (item) {
+                item.price = price;
+                const rows = document.querySelectorAll('.wl-item-row');
+                rows.forEach(r => {
+                    if (r.querySelector('.wl-symbol')?.innerText === item.symbol) {
+                        const pEl = r.querySelector('.wl-price');
+                        if (pEl) pEl.innerText = price.toFixed(decimals);
+                    }
+                });
+            }
+        }
+
+        // หากอยู่ในโหมด Bar Replay จะไม่แก้ไขแท่งเทียนสด
+        if (this.replayTime !== null || (window.replayEngine && window.replayEngine.isActive)) return;
+        if (!this.charts || this.charts.length === 0) return;
+
+        const matchingCharts = this.charts.filter(c => {
+            if (c.symbol === sym) return true;
+            if (sym === 'XAUUSD' && (c.symbol.includes('XAU') || c.symbol.includes('GOLD'))) return true;
+            if (sym.includes('BTC') && c.symbol.includes('BTC')) return true;
+            if (sym.includes('ETH') && c.symbol.includes('ETH')) return true;
+            if (sym.includes('SOL') && c.symbol.includes('SOL')) return true;
+            return false;
+        });
+
+        if (matchingCharts.length === 0) return;
+
+        for (const cell of matchingCharts) {
+            if (!cell.candleSeries || !cell.visibleCandles || cell.visibleCandles.length === 0) continue;
+            if (cell.isRangeBar || cell.isTickBar) continue;
+
+            const lastCandle = cell.visibleCandles[cell.visibleCandles.length - 1];
+            if (lastCandle) {
+                // ออสซิลเลตราคาปลายแท่งเทียนสด (Turbo Boost) โดยคงแท่งเทียนประวัติศาสตร์และราคาเปิดของ IC Markets ไว้
+                lastCandle.high = Number(Math.max(lastCandle.high, price).toFixed(decimals));
+                lastCandle.low = Number(Math.min(lastCandle.low, price).toFixed(decimals));
+                lastCandle.close = price;
+                lastCandle.volume = (lastCandle.volume || 100) + 1;
+
+                cell.candleSeries.update({
+                    time: lastCandle.time,
+                    open: lastCandle.open,
+                    high: lastCandle.high,
+                    low: lastCandle.low,
+                    close: lastCandle.close
+                });
+            }
+
+            if (window.replayEngine) {
+                if (window.replayEngine.checkLiveOrders) window.replayEngine.checkLiveOrders(cell.symbol, price);
+                if (window.replayEngine.updateFloatingPnL) window.replayEngine.updateFloatingPnL(cell.symbol, price);
+            }
+        }
+    }
+
+    handleLiveTickStream(tick) {
+        if (!tick || !tick.symbol) return;
+        const sym = tick.symbol;
+        const price = tick.bid !== undefined ? tick.bid : (tick.close !== undefined ? tick.close : tick.lp);
+        if (price === undefined || price === null || isNaN(price)) return;
+        const decimals = tick.digits !== undefined ? tick.digits : (sym.includes('XAU') || sym.includes('GOLD') ? 3 : (sym.includes('JPY') ? 3 : (sym.includes('EUR') || sym.includes('GBP') ? 5 : 2)));
+
+        if (sym === 'XAUUSD' || sym.includes('XAU') || sym.includes('GOLD')) {
+            this.goldAnchorICPrice = price;
+            if (this.lastPaxgPrice) {
+                this.goldAnchorPaxgPrice = this.lastPaxgPrice;
+                this.goldDelta = this.goldAnchorICPrice - this.goldAnchorPaxgPrice;
+            }
+        }
+
+        if (!this.cachedLiveRates) this.cachedLiveRates = {};
+        this.cachedLiveRates[sym] = tick;
+        if (sym === 'XAUUSD') {
+            this.cachedLiveRates['GOLD'] = tick;
+            this.cachedLiveRates['GOLDm#'] = tick;
+            this.cachedLiveRates['GOLD#'] = tick;
+            this.cachedLiveRates['XAUUSDm'] = tick;
+        } else if (sym === 'BTCUSDT') {
+            this.cachedLiveRates['BTCUSD'] = tick;
+        }
+
+        // อัปเดตราคาใน Watchlist ทันที
+        if (window.watchlist && window.watchlist.items) {
+            const item = window.watchlist.items.find(i => i.symbol === sym || (sym === 'XAUUSD' && (i.symbol === 'GOLD' || i.symbol === 'GOLDm#')));
+            if (item) {
+                item.price = price;
+                const rows = document.querySelectorAll('.wl-item-row');
+                rows.forEach(r => {
+                    if (r.querySelector('.wl-symbol')?.innerText === item.symbol) {
+                        const pEl = r.querySelector('.wl-price');
+                        if (pEl) pEl.innerText = price.toFixed(decimals);
+                    }
+                });
+            }
+        }
+
+        // หากอยู่ในโหมด Bar Replay จะไม่แก้ไขแท่งเทียนสด
+        if (this.replayTime !== null || (window.replayEngine && window.replayEngine.isActive)) return;
+        if (!this.charts || this.charts.length === 0) return;
+
+        const matchingCharts = this.charts.filter(c => {
+            if (c.symbol === sym) return true;
+            if (sym === 'XAUUSD' && (c.symbol.includes('XAU') || c.symbol.includes('GOLD'))) return true;
+            if (sym.includes('BTC') && c.symbol.includes('BTC')) return true;
+            if (sym.includes('ETH') && c.symbol.includes('ETH')) return true;
+            if (sym.includes('SOL') && c.symbol.includes('SOL')) return true;
+            return false;
+        });
+
+        if (matchingCharts.length === 0) return;
+
+        const nowSec = Math.floor(Date.now() / 1000) + this.thailandOffset;
+
+        for (const cell of matchingCharts) {
+            if (!cell.candleSeries || !cell.visibleCandles || cell.visibleCandles.length === 0) continue;
+            if (cell.isRangeBar || cell.isTickBar) continue;
+
+            const tfMinutes = this.parseTimeframeToMinutes(cell.timeframe);
+            const tfSeconds = tfMinutes * 60;
+            const currentBucketTime = Math.floor(nowSec / tfSeconds) * tfSeconds;
+            const lastCandle = cell.visibleCandles[cell.visibleCandles.length - 1];
+
+            if (lastCandle && lastCandle.time === currentBucketTime) {
+                lastCandle.high = Number(Math.max(lastCandle.high, price).toFixed(decimals));
+                lastCandle.low = Number(Math.min(lastCandle.low, price).toFixed(decimals));
+                lastCandle.close = price;
+                lastCandle.volume = (lastCandle.volume || 100) + 1;
+
+                cell.candleSeries.update({
+                    time: lastCandle.time,
+                    open: lastCandle.open,
+                    high: lastCandle.high,
+                    low: lastCandle.low,
+                    close: lastCandle.close
+                });
+
+                if (cell.showVolume && cell.volumeSeries) {
+                    cell.volumeSeries.update({
+                        time: lastCandle.time,
+                        value: lastCandle.volume,
+                        color: lastCandle.close >= lastCandle.open ? 'rgba(8, 153, 129, 0.4)' : 'rgba(242, 54, 69, 0.4)'
+                    });
+                }
+            } else if (lastCandle && currentBucketTime > lastCandle.time) {
+                const newCandle = {
+                    time: currentBucketTime,
+                    open: lastCandle.close,
+                    high: Number(Math.max(lastCandle.close, price).toFixed(decimals)),
+                    low: Number(Math.min(lastCandle.close, price).toFixed(decimals)),
+                    close: price,
+                    volume: 1
+                };
+                cell.visibleCandles.push(newCandle);
+                cell.candleSeries.update(newCandle);
+            }
+
+            if (window.replayEngine) {
+                if (window.replayEngine.checkLiveOrders) window.replayEngine.checkLiveOrders(cell.symbol, price);
+                if (window.replayEngine.updateFloatingPnL) window.replayEngine.updateFloatingPnL(cell.symbol, price);
+            }
+        }
+    }
+
+    handleLiveCandleStream(symbol, candle) {
+        if (!candle || !symbol) return;
+        if (this.replayTime !== null || (window.replayEngine && window.replayEngine.isActive)) return;
+        if (!this.charts || this.charts.length === 0) return;
+
+        const matchingCharts = this.charts.filter(c => {
+            if (c.symbol === symbol) return true;
+            if (symbol === 'XAUUSD' && (c.symbol.includes('XAU') || c.symbol.includes('GOLD'))) return true;
+            return false;
+        });
+
+        for (const cell of matchingCharts) {
+            if (!cell.candleSeries || !cell.visibleCandles || cell.visibleCandles.length === 0) continue;
+            if (cell.isRangeBar || cell.isTickBar) continue;
+
+            const tfMinutes = this.parseTimeframeToMinutes(cell.timeframe);
+            if (tfMinutes === 1) {
+                const existingIdx = cell.visibleCandles.findIndex(vc => vc.time === candle.time);
+                if (existingIdx !== -1) {
+                    cell.visibleCandles[existingIdx] = candle;
+                } else if (candle.time > cell.visibleCandles[cell.visibleCandles.length - 1].time) {
+                    cell.visibleCandles.push(candle);
+                }
+                cell.candleSeries.update(candle);
+            } else {
+                const tfSeconds = tfMinutes * 60;
+                const bucketTime = Math.floor(candle.time / tfSeconds) * tfSeconds;
+                const lastCandle = cell.visibleCandles[cell.visibleCandles.length - 1];
+
+                if (lastCandle && lastCandle.time === bucketTime) {
+                    lastCandle.high = Math.max(lastCandle.high, candle.high);
+                    lastCandle.low = Math.min(lastCandle.low, candle.low);
+                    lastCandle.close = candle.close;
+                    lastCandle.volume = (lastCandle.volume || 0) + (candle.volume || 1);
+                    cell.candleSeries.update({
+                        time: lastCandle.time,
+                        open: lastCandle.open,
+                        high: lastCandle.high,
+                        low: lastCandle.low,
+                        close: lastCandle.close
+                    });
+                } else if (lastCandle && bucketTime > lastCandle.time) {
+                    const newCandle = {
+                        time: bucketTime,
+                        open: candle.open,
+                        high: candle.high,
+                        low: candle.low,
+                        close: candle.close,
+                        volume: candle.volume || 1
+                    };
+                    cell.visibleCandles.push(newCandle);
+                    cell.candleSeries.update(newCandle);
+                }
+            }
+        }
+    }
+
+    // =========================================================
+    // ระบบดึงราคาตลาดโลกสดตรงจาก Binance WebSocket (PAXG Gold & Crypto)
+    // ผนวกราคา IC Markets Benchmark + Micro-Tick จาก PAXG ให้กราฟขยับเร็วสุดๆ Realtime
     // =========================================================
     initBinanceWebSocket() {
         try {
@@ -2322,30 +2658,139 @@ class ChartEngine {
                             price: price,
                             time: Date.now()
                         };
-                        // Map PAXG (Physical Gold Spot 1oz) to XAUUSD
                         if (sym === 'PAXGUSDT') {
-                            this.liveCryptoPrices['XAUUSD'] = {
-                                price: price,
-                                time: Date.now()
-                            };
-                            this.liveCryptoPrices['GOLD'] = {
-                                price: price,
-                                time: Date.now()
-                            };
+                            this.handlePaxgMicroTick(price);
                         }
                     }
                 } catch (err) {}
             };
 
             this.binanceWs.onerror = () => {
-                setTimeout(() => this.initBinanceWebSocket(), 6000);
+                setTimeout(() => this.initBinanceWebSocket(), 5000);
             };
 
             this.binanceWs.onclose = () => {
-                setTimeout(() => this.initBinanceWebSocket(), 6000);
+                setTimeout(() => this.initBinanceWebSocket(), 5000);
             };
         } catch (e) {
             console.warn('Binance WebSocket init warning:', e);
+        }
+    }
+
+    handlePaxgMicroTick(rawPaxg) {
+        if (!rawPaxg || isNaN(rawPaxg) || rawPaxg <= 0) return;
+        this.lastPaxgPrice = rawPaxg;
+
+        // หากยังไม่ได้เทียบ Anchor จาก IC Markets ให้ตรวจสอบจาก cachedLiveRates
+        if (!this.goldAnchorICPrice) {
+            const cachedXAU = (this.cachedLiveRates && this.cachedLiveRates['XAUUSD']) ? (this.cachedLiveRates['XAUUSD'].bid || this.cachedLiveRates['XAUUSD'].close) : null;
+            if (cachedXAU && !isNaN(cachedXAU) && cachedXAU > 1000) {
+                this.goldAnchorICPrice = Number(cachedXAU);
+                this.goldAnchorPaxgPrice = rawPaxg;
+                this.goldDelta = this.goldAnchorICPrice - this.goldAnchorPaxgPrice;
+            } else {
+                this.goldAnchorICPrice = rawPaxg;
+                this.goldAnchorPaxgPrice = rawPaxg;
+                this.goldDelta = 0;
+            }
+        }
+
+        // คำนวณราคา Gold ที่ผสาน IC Markets Benchmark เข้ากับความถี่ระดับ Micro-Tick จาก PAXG
+        const calibratedGold = Number((rawPaxg + (this.goldDelta || 0)).toFixed(3));
+        this.lastCalibratedGoldPrice = calibratedGold;
+        this.applyLiveGoldMicroTick(calibratedGold);
+    }
+
+    applyLiveGoldMicroTick(price) {
+        if (!price || isNaN(price)) return;
+        if (!this.cachedLiveRates) this.cachedLiveRates = {};
+        const rateObj = {
+            symbol: 'XAUUSD',
+            bid: price,
+            ask: Number((price + 0.08).toFixed(3)),
+            close: price,
+            digits: 3,
+            time: Math.floor(Date.now() / 1000),
+            source: 'hybrid_realtime'
+        };
+        this.cachedLiveRates['XAUUSD'] = rateObj;
+        this.cachedLiveRates['GOLD'] = rateObj;
+        this.cachedLiveRates['GOLDm#'] = rateObj;
+        this.cachedLiveRates['GOLD#'] = rateObj;
+        this.cachedLiveRates['XAUUSDm'] = rateObj;
+
+        // อัปเดตราคาใน Watchlist ทันทีแบบ Zero-Lag
+        if (window.watchlist && window.watchlist.items) {
+            const item = window.watchlist.items.find(i => i.symbol === 'XAUUSD' || i.symbol === 'GOLD' || i.symbol === 'GOLDm#');
+            if (item) {
+                item.price = price;
+                const rows = document.querySelectorAll('.wl-item-row');
+                rows.forEach(r => {
+                    const symText = r.querySelector('.wl-symbol')?.innerText;
+                    if (symText === 'XAUUSD' || symText === 'GOLD' || symText === 'GOLDm#') {
+                        const pEl = r.querySelector('.wl-price');
+                        if (pEl) pEl.innerText = price.toFixed(3);
+                    }
+                });
+            }
+        }
+
+        // หากอยู่ในโหมด Bar Replay จะไม่แก้ไขแท่งเทียนสด
+        if (this.replayTime !== null || (window.replayEngine && window.replayEngine.isActive)) return;
+        if (!this.charts || this.charts.length === 0) return;
+
+        const matchingCharts = this.charts.filter(c => c.symbol.includes('XAU') || c.symbol.includes('GOLD'));
+        if (matchingCharts.length === 0) return;
+
+        const nowSec = Math.floor(Date.now() / 1000) + this.thailandOffset;
+
+        for (const cell of matchingCharts) {
+            if (!cell.candleSeries || !cell.visibleCandles || cell.visibleCandles.length === 0) continue;
+            if (cell.isRangeBar || cell.isTickBar) continue;
+
+            const tfMinutes = this.parseTimeframeToMinutes(cell.timeframe);
+            const tfSeconds = tfMinutes * 60;
+            const currentBucketTime = Math.floor(nowSec / tfSeconds) * tfSeconds;
+            const lastCandle = cell.visibleCandles[cell.visibleCandles.length - 1];
+
+            if (lastCandle && lastCandle.time === currentBucketTime) {
+                lastCandle.high = Number(Math.max(lastCandle.high, price).toFixed(3));
+                lastCandle.low = Number(Math.min(lastCandle.low, price).toFixed(3));
+                lastCandle.close = price;
+                lastCandle.volume = (lastCandle.volume || 100) + 1;
+
+                cell.candleSeries.update({
+                    time: lastCandle.time,
+                    open: lastCandle.open,
+                    high: lastCandle.high,
+                    low: lastCandle.low,
+                    close: lastCandle.close
+                });
+
+                if (cell.showVolume && cell.volumeSeries) {
+                    cell.volumeSeries.update({
+                        time: lastCandle.time,
+                        value: lastCandle.volume,
+                        color: lastCandle.close >= lastCandle.open ? 'rgba(8, 153, 129, 0.4)' : 'rgba(242, 54, 69, 0.4)'
+                    });
+                }
+            } else if (lastCandle && currentBucketTime > lastCandle.time) {
+                const newCandle = {
+                    time: currentBucketTime,
+                    open: lastCandle.close,
+                    high: Number(Math.max(lastCandle.close, price).toFixed(3)),
+                    low: Number(Math.min(lastCandle.close, price).toFixed(3)),
+                    close: price,
+                    volume: 1
+                };
+                cell.visibleCandles.push(newCandle);
+                cell.candleSeries.update(newCandle);
+            }
+
+            if (window.replayEngine) {
+                if (window.replayEngine.checkLiveOrders) window.replayEngine.checkLiveOrders(cell.symbol, price);
+                if (window.replayEngine.updateFloatingPnL) window.replayEngine.updateFloatingPnL(cell.symbol, price);
+            }
         }
     }
 
@@ -2355,7 +2800,7 @@ class ChartEngine {
     startLiveTicker() {
         if (this.liveTickerInterval) clearInterval(this.liveTickerInterval);
 
-        // รัน Ticker ทุกๆ 250ms สำหรับส่งผ่านราคา Tick จริงแบบ Real-time ทันที
+        // รัน Ticker ทุกๆ 250ms สำหรับส่งผ่านราคา Tick จริงแบบ Real-time ทันที (Fallback)
         this.liveTickerInterval = setInterval(() => {
             this.tickLiveCandles();
         }, 250);
@@ -2369,14 +2814,15 @@ class ChartEngine {
 
         if (!this.charts || this.charts.length === 0) return;
 
-        // ดึงราคา Realtime ล่าสุดจาก Server API (MT5 Broker Quote หรือ Spot Stream)
-        let liveRates = null;
+        // ดึงราคา Realtime ล่าสุดจาก Server API
+        let liveRates = this.cachedLiveRates || null;
         try {
             const resp = await fetch('/api/live-rates', { cache: 'no-store' });
             if (resp.ok) {
                 const resJson = await resp.json();
                 if (resJson.status === 'ok' && resJson.rates) {
-                    liveRates = resJson.rates;
+                    liveRates = Object.assign(liveRates || {}, resJson.rates);
+                    this.cachedLiveRates = liveRates;
                 }
             }
         } catch (e) {}
@@ -2429,23 +2875,27 @@ class ChartEngine {
                 // 1. ถ้า MT5 กำลังเชื่อมต่ออยู่ ใช้ราคาจริงจากโบรกเกอร์ (Exness/XM 1:1) เป็นอันดับหนึ่งทันที!
                 const rawBid = rateObj.bid || rateObj.close;
                 newPrice = Number(rawBid.toFixed(decimals));
+            } else if (rateObj && (rateObj.bid || rateObj.close)) {
+                // 2. ใช้ราคาจริงจาก IC Markets Institutional Feed / TradingView Feed
+                const rawBid = rateObj.bid || rateObj.close;
+                newPrice = Number(rawBid.toFixed(decimals));
             } else {
-                // 2. ถ้า MT5 ไม่ได้เปิด: ใช้ราคา Spot Direct WebSocket จาก Binance (Crypto & Spot Gold PAXG)
-                const wsLive = this.liveCryptoPrices[sym] || (isGold ? this.liveCryptoPrices['XAUUSD'] : (sym.includes('BTC') ? this.liveCryptoPrices['BTCUSDT'] : (sym.includes('ETH') ? this.liveCryptoPrices['ETHUSDT'] : (sym.includes('SOL') ? this.liveCryptoPrices['SOLUSDT'] : null))));
-                if (wsLive && (Date.now() - wsLive.time < 6000)) {
-                    newPrice = Number(wsLive.price.toFixed(decimals));
-                } else if (rateObj && (rateObj.bid || rateObj.close)) {
-                    // 3. ใช้ราคาจาก Server API Public Stream
-                    const rawBid = rateObj.bid || rateObj.close;
-                    newPrice = Number(rawBid.toFixed(decimals));
+                // 3. สำรองราคา Crypto และ Gold จาก Binance WebSocket
+                let wsLive = null;
+                if (isGold) {
+                    const gPrice = this.lastCalibratedGoldPrice || (this.lastPaxgPrice ? (this.lastPaxgPrice + (this.goldDelta || 0)) : null);
+                    if (gPrice) wsLive = { price: gPrice, time: Date.now() };
                 } else {
-                    // 4. จำลองการขยับยามฉุกเฉิน
+                    wsLive = this.liveCryptoPrices[sym] || (sym.includes('BTC') ? this.liveCryptoPrices['BTCUSDT'] : (sym.includes('ETH') ? this.liveCryptoPrices['ETHUSDT'] : (sym.includes('SOL') ? this.liveCryptoPrices['SOLUSDT'] : null)));
+                }
+                if (wsLive && wsLive.price && (Date.now() - (wsLive.time || Date.now()) < 8000)) {
+                    newPrice = Number(wsLive.price.toFixed(decimals));
+                } else {
                     let lastPrice = this.getCurrentPrice(sym);
                     if (!lastPrice) {
-                        lastPrice = isGold ? 4347.000 : (isForex ? 1.15360 : 75800.00);
+                        lastPrice = isGold ? 4307.000 : (isForex ? 1.14660 : 76300.00);
                     }
-                    const delta = isGold ? (Math.random() - 0.49) * 0.10 : (isForex ? (Math.random() - 0.49) * 0.00015 : (Math.random() - 0.49) * 16.0);
-                    newPrice = Number((lastPrice + delta).toFixed(decimals));
+                    newPrice = Number(lastPrice.toFixed(decimals));
                 }
             }
 

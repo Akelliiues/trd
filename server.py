@@ -17,6 +17,9 @@ import time
 
 PORT = int(os.environ.get("PORT", 3000))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, BASE_DIR)
+from scripts.tradingview_feed import TradingViewWSFeed
+import queue
 
 LIVE_RATES = {}
 LIVE_RATES_LOCK = threading.Lock()
@@ -24,6 +27,23 @@ CANDLE_CACHE = {}
 CANDLE_CACHE_LOCK = threading.Lock()
 MT5_ACTIVE = False
 MT5_LAST_SEEN = 0
+
+# Server-Sent Events (SSE) Pub/Sub
+SSE_CLIENTS = set()
+SSE_CLIENTS_LOCK = threading.Lock()
+
+def broadcast_sse(event_type, data):
+    payload = f"event: {event_type}\ndata: {json.dumps(data)}\n\n".encode('utf-8')
+    with SSE_CLIENTS_LOCK:
+        dead = []
+        for q in SSE_CLIENTS:
+            try:
+                q.put_nowait(payload)
+            except queue.Full:
+                dead.append(q)
+        for d in dead:
+            SSE_CLIENTS.discard(d)
+
 
 PUBLIC_SYMBOLS_MAP = {
     'EURUSD': {'yahoo': 'EURUSD=X', 'digits': 5, 'spread': 0.00015},
@@ -75,11 +95,119 @@ class TradingToolsHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(b'{"status":"error","message":"Invalid payload"}')
             return
 
+        # Webhook / API: MT5 Push Rates Endpoint (เพิ่มความเรียลไทม์)
+        elif self.path == '/api/push-rates':
+            try:
+                global MT5_ACTIVE, MT5_LAST_SEEN
+                content_len = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(content_len)
+                data = json.loads(body.decode('utf-8'))
+                
+                rates = data.get('rates', {})
+                MT5_ACTIVE = True
+                MT5_LAST_SEEN = time.time()
+                for sym, r in rates.items():
+                    r['source'] = 'mt5_boost'
+                    r['mt5_boost'] = True
+                    r['time'] = int(time.time())
+                    with LIVE_RATES_LOCK:
+                        cur = LIVE_RATES.get(sym, {})
+                        cur.update(r)
+                        cur['mt5_bid'] = r.get('bid')
+                        cur['mt5_ask'] = r.get('ask')
+                        cur['mt5_boost'] = True
+                        cur['mt5_time'] = r['time']
+                        LIVE_RATES[sym] = cur
+                    broadcast_sse("mt5_tick", r)
+                    broadcast_sse("tick", r)
+                
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(b'{"status":"ok","updated":true,"boost":true}')
+            except Exception as e:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "error": str(e)}).encode('utf-8'))
+            return
+
+        # Webhook / API: MT5 Push Candles Endpoint
+        elif self.path == '/api/push-candles':
+            try:
+                content_len = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(content_len)
+                data = json.loads(body.decode('utf-8'))
+                
+                symbol = data.get('symbol', 'XAUUSD')
+                candles = data.get('candles', [])
+                
+                if candles and len(candles) > 0:
+                    with CANDLE_CACHE_LOCK:
+                        if symbol == "XAUUSD" and "XAUUSD" in CANDLE_CACHE and len(CANDLE_CACHE["XAUUSD"]) > 0:
+                            last_bar = CANDLE_CACHE["XAUUSD"][-1]
+                            if candles[-1]["time"] == last_bar["time"]:
+                                last_bar["volume"] = max(last_bar.get("volume", 0), candles[-1].get("volume", 0))
+                        else:
+                            CANDLE_CACHE[symbol] = candles
+                            out_path = os.path.join(BASE_DIR, "data", f"{symbol}_1m.json")
+                            with open(out_path, "w", encoding="utf-8") as f:
+                                json.dump(candles, f, indent=2)
+                    broadcast_sse("candle_update", {"symbol": symbol, "candle": candles[-1]})
+                
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(b'{"status":"ok","synced":true}')
+            except Exception as e:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "error": str(e)}).encode('utf-8'))
+            return
+
         super().do_POST()
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+
+        # 0. API Realtime SSE Stream (Sub-Millisecond Zero-Lag EventSource สำหรับหน้าจอชาร์ต)
+        if path == '/api/live-stream':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream')
+            self.send_header('Cache-Control', 'no-cache, no-transform')
+            self.send_header('Connection', 'keep-alive')
+            self.send_header('X-Accel-Buffering', 'no')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+
+            client_queue = queue.Queue(maxsize=120)
+            with SSE_CLIENTS_LOCK:
+                SSE_CLIENTS.add(client_queue)
+
+            self.wfile.write(b": connected\n\n")
+            self.wfile.flush()
+
+            with LIVE_RATES_LOCK:
+                init_rates = dict(LIVE_RATES)
+            init_msg = f"event: rates_init\ndata: {json.dumps(init_rates)}\n\n".encode('utf-8')
+            self.wfile.write(init_msg)
+            self.wfile.flush()
+
+            try:
+                while True:
+                    try:
+                        msg = client_queue.get(timeout=12)
+                        self.wfile.write(msg)
+                        self.wfile.flush()
+                    except queue.Empty:
+                        self.wfile.write(b": keepalive\n\n")
+                        self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError, Exception):
+                pass
+            finally:
+                with SSE_CLIENTS_LOCK:
+                    SSE_CLIENTS.discard(client_queue)
+            return
 
         # 1. API ส่งราคา Live Rates ล่าสุดจาก RAM Cache ระดับ Sub-Millisecond
         if path.startswith('/api/live-rates') or path.startswith('/api/rates'):
@@ -91,11 +219,14 @@ class TradingToolsHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Access-Control-Allow-Origin', '*')
             self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
             self.end_headers()
+            is_boost = MT5_ACTIVE and (time.time() - MT5_LAST_SEEN < 3)
             self.wfile.write(json.dumps({
                 "status": "ok",
                 "rates": rates_data,
-                "mt5_active": MT5_ACTIVE and (time.time() - MT5_LAST_SEEN < 3),
-                "server_time": int(time.time())
+                "mt5_active": is_boost,
+                "server_time": int(time.time()),
+                "primary_source": "icmarkets_institutional",
+                "realtime_boost": "mt5_turbo_active" if is_boost else "ready"
             }).encode('utf-8'))
             return
 
@@ -201,9 +332,9 @@ def public_market_data_worker():
             now = int(time.time())
             is_mt5_live = MT5_ACTIVE and (now - MT5_LAST_SEEN < 3)
 
-            # 1. ดึงราคา Ticker สดจาก Binance (Spot Gold & Crypto)
+            # 1. ดึงราคา Ticker สดจาก Binance (Crypto Backup)
             try:
-                url = "https://api.binance.com/api/v3/ticker/price?symbols=%5B%22PAXGUSDT%22,%22BTCUSDT%22,%22ETHUSDT%22,%22SOLUSDT%22%5D"
+                url = "https://api.binance.com/api/v3/ticker/price?symbols=%5B%22BTCUSDT%22,%22ETHUSDT%22,%22SOLUSDT%22%5D"
                 req = urllib.request.Request(url, headers={'User-Agent': 'TradingTools/2.5.7'})
                 with urllib.request.urlopen(req, timeout=2.5) as resp:
                     items = json.loads(resp.read().decode('utf-8'))
@@ -211,20 +342,9 @@ def public_market_data_worker():
                         for item in items:
                             sym = item['symbol']
                             price = float(item['price'])
-                            if sym == 'PAXGUSDT':
-                                if not is_mt5_live:
-                                    LIVE_RATES['XAUUSD'] = {
-                                        'symbol': 'XAUUSD',
-                                        'bid': round(price, 3),
-                                        'ask': round(price + 0.15, 3),
-                                        'close': round(price, 3),
-                                        'time': now,
-                                        'digits': 3,
-                                        'source': 'spot_gold_live'
-                                    }
-                            else:
-                                spread = 0.5 if sym == 'BTCUSDT' else (0.1 if sym == 'ETHUSDT' else 0.02)
-                                if not is_mt5_live:
+                            spread = 0.5 if sym == 'BTCUSDT' else (0.1 if sym == 'ETHUSDT' else 0.02)
+                            if not is_mt5_live:
+                                if sym not in LIVE_RATES or LIVE_RATES[sym].get('source') != 'tradingview_live':
                                     LIVE_RATES[sym] = {
                                         'symbol': sym,
                                         'bid': round(price, 2),
@@ -243,18 +363,9 @@ def public_market_data_worker():
             except Exception:
                 pass
 
-            # 2. เมื่อ MT5 ไม่ได้เปิด: ดึงแท่งเทียน M1 สดต่อเนื่องจาก Binance (Gold + Crypto) ทุกๆ 4 วินาที
+            # 2. เมื่อ MT5 ไม่ได้เปิด: ดึงแท่งเทียน M1 สดต่อเนื่องจาก Binance (Crypto Backup) ทุกๆ 4 วินาที
             if not is_mt5_live and (now - last_candle_sync >= 4):
                 last_candle_sync = now
-
-                # 2.1 Spot Gold (XAUUSD) จาก Binance PAXGUSDT
-                gold_candles = fetch_binance_klines("PAXGUSDT", count=600, digits=3)
-                if gold_candles:
-                    with CANDLE_CACHE_LOCK:
-                        CANDLE_CACHE['XAUUSD'] = gold_candles
-                    out_path = os.path.join(BASE_DIR, "data", "XAUUSD_1m.json")
-                    with open(out_path, "w", encoding="utf-8") as f:
-                        json.dump(gold_candles, f)
 
                 # 2.2 Bitcoin (BTCUSD & BTCUSDT)
                 btc_candles = fetch_binance_klines("BTCUSDT", count=600, digits=2)
@@ -401,12 +512,18 @@ def mt5_candle_sync_worker():
                             "volume": int(r['tick_volume'])
                         })
                     
-                    with CANDLE_CACHE_LOCK:
-                        CANDLE_CACHE[target_name] = candles
-
-                    out_path = os.path.join(BASE_DIR, "data", f"{target_name}_1m.json")
-                    with open(out_path, "w", encoding="utf-8") as f:
-                        json.dump(candles, f)
+                    if target_name == "XAUUSD" and "XAUUSD" in CANDLE_CACHE and len(CANDLE_CACHE["XAUUSD"]) > 0:
+                        # รักษาโครงสร้างแท่งเทียน IC Markets ECN เป็นหลัก ปรับปรุงเฉพาะ volume ล่าสุดจาก MT5
+                        with CANDLE_CACHE_LOCK:
+                            last_bar = CANDLE_CACHE["XAUUSD"][-1]
+                            if candles and candles[-1]["time"] == last_bar["time"]:
+                                last_bar["volume"] = max(last_bar.get("volume", 0), candles[-1].get("volume", 0))
+                    else:
+                        with CANDLE_CACHE_LOCK:
+                            CANDLE_CACHE[target_name] = candles
+                        out_path = os.path.join(BASE_DIR, "data", f"{target_name}_1m.json")
+                        with open(out_path, "w", encoding="utf-8") as f:
+                            json.dump(candles, f)
         except Exception:
             pass
 
@@ -414,7 +531,7 @@ def mt5_candle_sync_worker():
 def mt5_background_worker():
     """
     Dedicated high-frequency background worker for MetaTrader 5 (MT5).
-    Streams exact broker quotes (Exness/XM/etc.) every 60ms into LIVE_RATES.
+    Streams exact broker micro-ticks to BOOST real-time chart precision.
     """
     global MT5_ACTIVE, MT5_LAST_SEEN
     while True:
@@ -425,8 +542,6 @@ def mt5_background_worker():
                 time.sleep(4)
                 continue
 
-            MT5_ACTIVE = True
-            MT5_LAST_SEEN = time.time()
             all_symbols = [s.name for s in mt5.symbols_get()] if mt5.symbols_get() else []
 
             gold_sym = next((c for c in ['GOLDm#', 'GOLD', 'XAUUSD', 'XAUUSDm', 'GOLD#', 'XAUUSD_i', 'XAUUSD.r'] if c in all_symbols), None)
@@ -452,27 +567,33 @@ def mt5_background_worker():
                 ("XAGUSD", silv_sym, 3)
             ]
 
-            print(f"[+] MT5 Broker Live Engine Connected! (Gold Symbol: {gold_sym}, BTC: {btc_sym})")
+            print(f"[+] MT5 Realtime Precision Boost Engine Connected! (Gold: {gold_sym})")
 
             while True:
                 for target_name, sym, digits in mapping:
                     if not sym: continue
                     tick = mt5.symbol_info_tick(sym)
                     if tick:
+                        MT5_ACTIVE = True
+                        MT5_LAST_SEEN = time.time()
+                        bid_val = round(tick.bid, digits)
+                        ask_val = round(tick.ask, digits)
                         with LIVE_RATES_LOCK:
-                            LIVE_RATES[target_name] = {
-                                'symbol': target_name,
-                                'actual': sym,
-                                'bid': round(tick.bid, digits),
-                                'ask': round(tick.ask, digits),
-                                'close': round(tick.bid, digits),
-                                'time': int(time.time()),
-                                'digits': digits,
-                                'source': 'mt5_live'
-                            }
-                MT5_ACTIVE = True
-                MT5_LAST_SEEN = time.time()
-                time.sleep(0.06)
+                            cur = LIVE_RATES.get(target_name, {})
+                            cur['mt5_bid'] = bid_val
+                            cur['mt5_ask'] = ask_val
+                            cur['mt5_boost'] = True
+                            cur['mt5_time'] = int(time.time())
+                        broadcast_sse("mt5_tick", {
+                            "symbol": target_name,
+                            "bid": bid_val,
+                            "ask": ask_val,
+                            "close": bid_val,
+                            "digits": digits,
+                            "source": "mt5_boost",
+                            "time": int(time.time())
+                        })
+                time.sleep(0.05)
         except Exception as e:
             MT5_ACTIVE = False
             try:
@@ -484,6 +605,42 @@ def mt5_background_worker():
 
 
 if __name__ == "__main__":
+    def handle_tv_rate_update(sym, rate_obj):
+        with LIVE_RATES_LOCK:
+            existing = LIVE_RATES.get(sym, {})
+            if MT5_ACTIVE and (time.time() - MT5_LAST_SEEN < 3):
+                rate_obj['mt5_boost'] = True
+                if 'mt5_bid' in existing:
+                    rate_obj['mt5_bid'] = existing['mt5_bid']
+                    rate_obj['mt5_ask'] = existing['mt5_ask']
+            LIVE_RATES[sym] = rate_obj
+
+    def handle_tv_candle_update(sym, candles, is_snapshot):
+        if not candles:
+            return
+        with CANDLE_CACHE_LOCK:
+            if is_snapshot:
+                CANDLE_CACHE[sym] = candles
+                try:
+                    out_path = os.path.join(BASE_DIR, "data", f"{sym}_1m.json")
+                    with open(out_path, "w", encoding="utf-8") as f:
+                        json.dump(candles[-1000:], f)
+                except Exception:
+                    pass
+            else:
+                bar = candles[0]
+                if sym not in CANDLE_CACHE:
+                    CANDLE_CACHE[sym] = []
+                cache = CANDLE_CACHE[sym]
+                if cache and cache[-1]["time"] == bar["time"]:
+                    cache[-1] = bar
+                elif cache and bar["time"] > cache[-1]["time"]:
+                    cache.append(bar)
+                    if len(cache) > 1200:
+                        del cache[0]
+                elif not cache:
+                    cache.append(bar)
+
     # 1. Start MT5 Worker (Highest Priority when MT5 is running)
     mt5_thread = threading.Thread(target=mt5_background_worker, daemon=True)
     mt5_thread.start()
@@ -492,17 +649,27 @@ if __name__ == "__main__":
     candle_thread = threading.Thread(target=mt5_candle_sync_worker, daemon=True)
     candle_thread.start()
 
-    # 3. Start Public Spot Market Worker (Fallback when MT5 is closed)
+    # 3. Start TradingView Institutional Real-time Feed (IC Markets / Pepperstone Gold 24/7)
+    tv_feed = TradingViewWSFeed(
+        on_rate_update=handle_tv_rate_update,
+        on_candle_update=handle_tv_candle_update,
+        on_sse_broadcast=broadcast_sse,
+        preferred_gold="ICMARKETS"
+    )
+    tv_feed.start()
+
+    # 4. Start Public Spot Market Worker (Fallback when MT5 is closed)
     public_thread = threading.Thread(target=public_market_data_worker, daemon=True)
     public_thread.start()
 
-    # 4. HTTP Server
+    # 5. HTTP Server
     socketserver.ThreadingTCPServer.allow_reuse_address = True
     with socketserver.ThreadingTCPServer(("", PORT), TradingToolsHandler) as httpd:
         print(f"==================================================")
         print(f" TradingTools Realtime Market Server (Live Sub-60ms)")
         print(f" Web App URL : http://localhost:{PORT}")
-        print(f" MT5 Engine  : Exness / Broker Real-time Sync Active")
+        print(f" Gold Feed   : IC Markets Institutional ECN (Zero-Lag)")
+        print(f" SSE Stream  : http://localhost:{PORT}/api/live-stream")
         print(f" Live Rates  : http://localhost:{PORT}/api/live-rates")
         print(f"==================================================")
         try:
