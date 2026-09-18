@@ -388,12 +388,24 @@ class ChartEngine {
                 if (bResp.ok) {
                     const rawKlines = await bResp.json();
                     if (Array.isArray(rawKlines) && rawKlines.length > 0) {
+                        let delta = 0;
+                        if (isGold) {
+                            const liveXAU = (this.cachedLiveRates && this.cachedLiveRates['XAUUSD']) ? (this.cachedLiveRates['XAUUSD'].bid || this.cachedLiveRates['XAUUSD'].close) : null;
+                            const lastPaxg = parseFloat(rawKlines[rawKlines.length - 1][4]);
+                            if (liveXAU && !isNaN(liveXAU) && liveXAU > 1000) {
+                                delta = liveXAU - lastPaxg;
+                                this.goldDelta = delta;
+                            } else if (this.goldDelta !== undefined && this.goldDelta !== null) {
+                                delta = this.goldDelta;
+                            }
+                        }
+
                         const freshCandles = rawKlines.map(k => ({
                             time: Math.floor(k[0] / 1000) + this.thailandOffset,
-                            open: Number(parseFloat(k[1]).toFixed(decimals)),
-                            high: Number(parseFloat(k[2]).toFixed(decimals)),
-                            low: Number(parseFloat(k[3]).toFixed(decimals)),
-                            close: Number(parseFloat(k[4]).toFixed(decimals)),
+                            open: Number((parseFloat(k[1]) + delta).toFixed(decimals)),
+                            high: Number((parseFloat(k[2]) + delta).toFixed(decimals)),
+                            low: Number((parseFloat(k[3]) + delta).toFixed(decimals)),
+                            close: Number((parseFloat(k[4]) + delta).toFixed(decimals)),
                             volume: Math.round(parseFloat(k[5]))
                         }));
 
@@ -1515,10 +1527,97 @@ class ChartEngine {
         if (window.app && window.app.onActiveChartChanged) {
             window.app.onActiveChartChanged(this.charts[index]);
         }
+        this.updateActiveTitlebarPrice(this.charts[index]);
     }
 
     getActiveChart() {
         return this.charts[this.activeChartIndex] || this.charts[0];
+    }
+
+    updateActiveTitlebarPrice(cell) {
+        if (!cell) cell = this.getActiveChart();
+        if (!cell) return;
+        const sym = cell.symbol || 'XAUUSD';
+        const isGold = sym.includes('XAU') || sym.includes('GOLD');
+        const isForex = sym.includes('EUR') || sym.includes('GBP') || sym.includes('JPY') || sym.includes('AUD');
+        const decimals = isGold ? 2 : (isForex ? 5 : 2);
+
+        let currentPrice = null;
+        let openPrice = null;
+
+        if (cell.currentCandle && cell.currentCandle.close !== undefined) {
+            currentPrice = cell.currentCandle.close;
+            openPrice = cell.currentCandle.open;
+        } else if (cell.visibleCandles && cell.visibleCandles.length > 0) {
+            const lastC = cell.visibleCandles[cell.visibleCandles.length - 1];
+            currentPrice = lastC.close;
+            openPrice = lastC.open;
+        } else if (this.cachedLiveRates && this.cachedLiveRates[sym]) {
+            currentPrice = this.cachedLiveRates[sym].bid || this.cachedLiveRates[sym].close;
+        }
+
+        if (currentPrice === null || isNaN(currentPrice)) return;
+
+        let prevPrice = cell.prevTitlePrice !== undefined ? cell.prevTitlePrice : currentPrice;
+        let dir = 'up';
+        let arrow = '▲';
+        if (currentPrice > prevPrice) {
+            dir = 'up';
+            arrow = '▲';
+        } else if (currentPrice < prevPrice) {
+            dir = 'down';
+            arrow = '▼';
+        } else {
+            arrow = cell.lastTitleArrow || '▲';
+            dir = cell.lastTitleDir || 'up';
+        }
+        cell.prevTitlePrice = currentPrice;
+        cell.lastTitleArrow = arrow;
+        cell.lastTitleDir = dir;
+
+        const formattedPrice = currentPrice.toLocaleString('en-US', {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals
+        });
+
+        let changePercentStr = '';
+        if (openPrice && openPrice > 0) {
+            const chg = ((currentPrice - openPrice) / openPrice) * 100;
+            const sign = chg >= 0 ? '+' : '';
+            changePercentStr = `${sign}${chg.toFixed(2)}%`;
+        }
+
+        // 1. Browser Tab Title (document.title) สไตล์ TradingView เช่น "XAUUSD ▲ 4,364.75 +0.15% — TradingTools"
+        document.title = `${sym} ${arrow} ${formattedPrice}${changePercentStr ? ' ' + changePercentStr : ''} — TradingTools`;
+
+        // 2. Application Topbar Titlebar Ticker
+        let tickerEl = document.getElementById('topbar-active-ticker');
+        if (!tickerEl) {
+            const topbarLeft = document.querySelector('.topbar-left');
+            if (topbarLeft) {
+                tickerEl = document.createElement('div');
+                tickerEl.id = 'topbar-active-ticker';
+                tickerEl.className = 'topbar-active-ticker';
+                const sep = topbarLeft.querySelector('.topbar-sep');
+                if (sep) {
+                    topbarLeft.insertBefore(tickerEl, sep.nextSibling);
+                } else {
+                    topbarLeft.appendChild(tickerEl);
+                }
+            }
+        }
+
+        if (tickerEl) {
+            tickerEl.innerHTML = `
+                <span class="tat-symbol">${sym}</span>
+                <span class="tat-arrow ${dir}">${arrow}</span>
+                <span class="tat-price ${dir}">${formattedPrice}</span>
+                ${changePercentStr ? `<span class="tat-change ${dir}">${changePercentStr}</span>` : ''}
+            `;
+            tickerEl.classList.remove('flash-up', 'flash-down');
+            void tickerEl.offsetWidth; // force DOM reflow
+            tickerEl.classList.add(dir === 'up' ? 'flash-up' : 'flash-down');
+        }
     }
 
     /**
@@ -1576,6 +1675,11 @@ class ChartEngine {
             this.scrollToLatestBar(cell);
         } else {
             cell.chart.timeScale().fitContent();
+        }
+
+        // อัปเดตราคาที่ Titlebar ทันทีเมื่อโหลดข้อมูลชาร์ตที่ Active อยู่
+        if (cell.index === this.activeChartIndex) {
+            this.updateActiveTitlebarPrice(cell);
         }
     }
 
@@ -2682,6 +2786,10 @@ class ChartEngine {
             if (this.checkPriceAlerts) {
                 this.checkPriceAlerts(cell.symbol, price);
             }
+
+            if (cell.index === this.activeChartIndex) {
+                this.updateActiveTitlebarPrice(cell);
+            }
         }
     }
 
@@ -2795,6 +2903,10 @@ class ChartEngine {
             if (this.checkPriceAlerts) {
                 this.checkPriceAlerts(cell.symbol, price);
             }
+
+            if (cell.index === this.activeChartIndex) {
+                this.updateActiveTitlebarPrice(cell);
+            }
         }
     }
 
@@ -2851,6 +2963,10 @@ class ChartEngine {
                     cell.visibleCandles.push(newCandle);
                     cell.candleSeries.update(newCandle);
                 }
+            }
+
+            if (cell.index === this.activeChartIndex) {
+                this.updateActiveTitlebarPrice(cell);
             }
         }
     }
@@ -3006,6 +3122,10 @@ class ChartEngine {
             if (window.replayEngine) {
                 if (window.replayEngine.checkLiveOrders) window.replayEngine.checkLiveOrders(cell.symbol, price);
                 if (window.replayEngine.updateFloatingPnL) window.replayEngine.updateFloatingPnL(cell.symbol, price);
+            }
+
+            if (cell.index === this.activeChartIndex) {
+                this.updateActiveTitlebarPrice(cell);
             }
         }
     }
@@ -3243,6 +3363,10 @@ class ChartEngine {
             if (this.checkPriceAlerts) {
                 this.checkPriceAlerts(cell.symbol, livePrice);
             }
+
+            if (cell.index === this.activeChartIndex) {
+                this.updateActiveTitlebarPrice(cell);
+            }
         }
     }
 
@@ -3329,6 +3453,10 @@ class ChartEngine {
 
                     if (cell.indicators && cell.indicators.length > 0) {
                         this.recalculateIndicators(cell);
+                    }
+
+                    if (cell.index === this.activeChartIndex) {
+                        this.updateActiveTitlebarPrice(cell);
                     }
                 }
             } catch (e) {}
@@ -5978,6 +6106,8 @@ class ChartEngine {
         for (let i = cell.drawings.length - 1; i >= 0; i--) {
             const d = cell.drawings[i];
             if (!d || !d.points || d.points.length === 0) continue;
+            const isSelected = (d.selected || cell.selectedDrawingId === d.id);
+            if (!isSelected) continue;
             const btn = this.getDrawingDeleteBtnPos(d, cell, toScreen, canvasW, canvasH);
             if (btn && Math.hypot(px - btn.x, py - btn.y) <= btn.r + 10) {
                 return { type: 'DELETE_DRAWING', cellIndex: cell.index, drawingId: d.id, drawing: d };
@@ -6426,41 +6556,36 @@ class ChartEngine {
                 ctx.lineTo(startX + width, entryY);
                 ctx.stroke();
 
-                // Vertex Anchors & Drag Grips
-                ctx.fillStyle = '#38bdf8';
-                ctx.beginPath();
-                ctx.arc(startX, entryY, isSelected ? 5 : 4, 0, Math.PI * 2);
-                ctx.fill();
+                // 4. เมื่อคลิกเลือก Active เท่านั้น จึงจะแสดงจุด Handle, การ์ด HUD สรุปผล และป้ายราคาเต็มรูปแบบ
                 if (isSelected) {
+                    // Vertex Anchors & Drag Grips
+                    ctx.fillStyle = '#38bdf8';
+                    ctx.beginPath();
+                    ctx.arc(startX, entryY, 5, 0, Math.PI * 2);
+                    ctx.fill();
                     ctx.strokeStyle = '#ffffff';
                     ctx.lineWidth = 1.2;
                     ctx.stroke();
-                }
 
-                // TP Handle Grip (Green)
-                ctx.fillStyle = '#10b981';
-                ctx.beginPath();
-                ctx.arc(startX + width, targetY, isSelected ? 6 : 4, 0, Math.PI * 2);
-                ctx.fill();
-                if (isSelected) {
+                    // TP Handle Grip (Green)
+                    ctx.fillStyle = '#10b981';
+                    ctx.beginPath();
+                    ctx.arc(startX + width, targetY, 6, 0, Math.PI * 2);
+                    ctx.fill();
                     ctx.strokeStyle = '#ffffff';
                     ctx.lineWidth = 1.5;
                     ctx.stroke();
-                }
 
-                // SL Handle Grip (Red)
-                ctx.fillStyle = '#ef4444';
-                ctx.beginPath();
-                ctx.arc(startX + width, stopY, isSelected ? 6 : 4, 0, Math.PI * 2);
-                ctx.fill();
-                if (isSelected) {
+                    // SL Handle Grip (Red)
+                    ctx.fillStyle = '#ef4444';
+                    ctx.beginPath();
+                    ctx.arc(startX + width, stopY, 6, 0, Math.PI * 2);
+                    ctx.fill();
                     ctx.strokeStyle = '#ffffff';
                     ctx.lineWidth = 1.5;
                     ctx.stroke();
-                }
 
-                // Time Edge Grip (Gray)
-                if (isSelected) {
+                    // Time Edge Grip (Gray)
                     ctx.fillStyle = '#94a3b8';
                     ctx.beginPath();
                     ctx.arc(startX + width, entryY, 5, 0, Math.PI * 2);
@@ -6468,66 +6593,66 @@ class ChartEngine {
                     ctx.strokeStyle = '#ffffff';
                     ctx.lineWidth = 1.2;
                     ctx.stroke();
+
+                    // คำนวณ Stats (R:R, Pips, Lot Size)
+                    const stats = this.calculatePositionStats(d, cell.symbol);
+                    const targetPrice = d.points[1].price;
+                    const stopPrice = d.points[2].price;
+
+                    // HUD Card ตรงกลางแสดง R:R Ratio, Lot Size, และ Points
+                    const hudW = Math.min(Math.max(width - 8, 140), 220);
+                    const hudH = 58;
+                    let hudX = startX + (width - hudW) / 2;
+                    let hudY = entryY - hudH / 2;
+
+                    if (hudX < 10) hudX = 10;
+                    if (hudX + hudW > canvasW - 10) hudX = canvasW - hudW - 10;
+                    if (hudY < 10) hudY = 10;
+                    if (hudY + hudH > canvasH - 10) hudY = canvasH - hudH - 10;
+
+                    ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+                    ctx.strokeStyle = '#a855f7';
+                    ctx.lineWidth = 1.4;
+                    this.drawSafeRoundedRect(ctx, hudX, hudY, hudW, hudH, 6);
+                    ctx.fill();
+                    ctx.stroke();
+
+                    // HUD Line 1: Type & R:R Ratio
+                    ctx.font = 'bold 11px sans-serif';
+                    ctx.fillStyle = isLong ? '#10b981' : '#ef4444';
+                    ctx.textAlign = 'left';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(`${isLong ? '▲ LONG' : '▼ SHORT'} | R:R 1 : ${stats.rr}`, hudX + 8, hudY + 14);
+
+                    // HUD Line 2: Target & Stop Points
+                    ctx.font = '10px monospace';
+                    ctx.fillStyle = '#e2e8f0';
+                    ctx.fillText(`TP: +${stats.rewardPts} pts  SL: -${stats.stopPts} pts`, hudX + 8, hudY + 30);
+
+                    // HUD Line 3: Risk Dollar & Recommended Lot Size
+                    ctx.font = 'bold 10px monospace';
+                    ctx.fillStyle = '#38bdf8';
+                    ctx.fillText(`เสี่ยง: $${d.riskAmount || 100} -> แนะนำ: ${stats.lotSize} Lot`, hudX + 8, hudY + 45);
+
+                    // ป้ายราคาริมขวากล่อง
+                    const priceBadgeW = 68;
+                    const priceBadgeH = 16;
+                    // Target Price Tag
+                    ctx.fillStyle = 'rgba(16, 185, 129, 0.95)';
+                    this.drawSafeRoundedRect(ctx, startX + width - priceBadgeW, targetY - priceBadgeH / 2, priceBadgeW, priceBadgeH, 3);
+                    ctx.fill();
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 9px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`$${targetPrice.toFixed(decimals)}`, startX + width - priceBadgeW / 2, targetY);
+
+                    // Stop Price Tag
+                    ctx.fillStyle = 'rgba(239, 68, 68, 0.95)';
+                    this.drawSafeRoundedRect(ctx, startX + width - priceBadgeW, stopY - priceBadgeH / 2, priceBadgeW, priceBadgeH, 3);
+                    ctx.fill();
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText(`$${stopPrice.toFixed(decimals)}`, startX + width - priceBadgeW / 2, stopY);
                 }
-
-                // 4. คำนวณ Stats (R:R, Pips, Lot Size)
-                const stats = this.calculatePositionStats(d, cell.symbol);
-                const targetPrice = d.points[1].price;
-                const stopPrice = d.points[2].price;
-
-                // 5. HUD Card ตรงกลางแสดง R:R Ratio, Lot Size, และ Points
-                const hudW = Math.min(Math.max(width - 8, 140), 220);
-                const hudH = 58;
-                let hudX = startX + (width - hudW) / 2;
-                let hudY = entryY - hudH / 2;
-
-                if (hudX < 10) hudX = 10;
-                if (hudX + hudW > canvasW - 10) hudX = canvasW - hudW - 10;
-                if (hudY < 10) hudY = 10;
-                if (hudY + hudH > canvasH - 10) hudY = canvasH - hudH - 10;
-
-                ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
-                ctx.strokeStyle = isSelected ? '#a855f7' : (isLong ? 'rgba(16, 185, 129, 0.7)' : 'rgba(239, 68, 68, 0.7)');
-                ctx.lineWidth = 1.2;
-                this.drawSafeRoundedRect(ctx, hudX, hudY, hudW, hudH, 6);
-                ctx.fill();
-                ctx.stroke();
-
-                // HUD Line 1: Type & R:R Ratio
-                ctx.font = 'bold 11px sans-serif';
-                ctx.fillStyle = isLong ? '#10b981' : '#ef4444';
-                ctx.textAlign = 'left';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(`${isLong ? '▲ LONG' : '▼ SHORT'} | R:R 1 : ${stats.rr}`, hudX + 8, hudY + 14);
-
-                // HUD Line 2: Target & Stop Points
-                ctx.font = '10px monospace';
-                ctx.fillStyle = '#e2e8f0';
-                ctx.fillText(`TP: +${stats.rewardPts} pts  SL: -${stats.stopPts} pts`, hudX + 8, hudY + 30);
-
-                // HUD Line 3: Risk Dollar & Recommended Lot Size
-                ctx.font = 'bold 10px monospace';
-                ctx.fillStyle = '#38bdf8';
-                ctx.fillText(`เสี่ยง: $${d.riskAmount || 100} -> แนะนำ: ${stats.lotSize} Lot`, hudX + 8, hudY + 45);
-
-                // ป้ายราคาริมขวากล่อง
-                const priceBadgeW = 68;
-                const priceBadgeH = 16;
-                // Target Price Tag
-                ctx.fillStyle = 'rgba(16, 185, 129, 0.9)';
-                this.drawSafeRoundedRect(ctx, startX + width - priceBadgeW, targetY - priceBadgeH / 2, priceBadgeW, priceBadgeH, 3);
-                ctx.fill();
-                ctx.fillStyle = '#ffffff';
-                ctx.font = 'bold 9px monospace';
-                ctx.textAlign = 'center';
-                ctx.fillText(`$${targetPrice.toFixed(decimals)}`, startX + width - priceBadgeW / 2, targetY);
-
-                // Stop Price Tag
-                ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
-                this.drawSafeRoundedRect(ctx, startX + width - priceBadgeW, stopY - priceBadgeH / 2, priceBadgeW, priceBadgeH, 3);
-                ctx.fill();
-                ctx.fillStyle = '#ffffff';
-                ctx.fillText(`$${stopPrice.toFixed(decimals)}`, startX + width - priceBadgeW / 2, stopY);
             }
 
             // 6. เส้นทาง (Path / Polyline Arrow)
@@ -6629,8 +6754,8 @@ class ChartEngine {
                 ctx.fillText(textStr, boxX + 9, boxY + boxH / 2);
             }
 
-            // 8. ปุ่ม [✕] สำหรับลบภาพวาดอิสระเมื่อเครื่องมือนั้น Active อยู่ หรือกล่อง Position
-            const shouldShowDeleteBtn = (isSelected && !isPreview) || (!isPreview && (d.type === 'long_position' || d.type === 'short_position'));
+            // 8. ปุ่ม [✕] สำหรับลบภาพวาดอิสระเมื่อเครื่องมือนั้น Active อยู่
+            const shouldShowDeleteBtn = (isSelected && !isPreview);
             if (shouldShowDeleteBtn) {
                 const btn = this.getDrawingDeleteBtnPos(d, cell, toScreen, canvasW, canvasH);
                 if (btn) {

@@ -470,9 +470,22 @@ def public_market_price_poller():
                     merge_and_persist_candles("SOLUSD", sol_candles, max_len=10000, save_to_disk=True)
                     merge_and_persist_candles("SOLUSDT", sol_candles, max_len=10000, save_to_disk=True)
 
-                # 2.4 Gold Spot Backup (PAXGUSDT 1:1)
+                # 2.4 Gold Spot Backup (PAXGUSDT with Calibration Delta to Spot Gold)
                 paxg_candles = fetch_binance_klines("PAXGUSDT", count=1000, digits=2)
                 if paxg_candles:
+                    real_xau = None
+                    with LIVE_RATES_LOCK:
+                        if "XAUUSD" in LIVE_RATES_CACHE:
+                            real_xau = LIVE_RATES_CACHE["XAUUSD"].get("bid") or LIVE_RATES_CACHE["XAUUSD"].get("close")
+                    if real_xau and paxg_candles:
+                        last_paxg = paxg_candles[-1]["close"]
+                        delta = round(real_xau - last_paxg, 2)
+                        if abs(delta) > 0.05:
+                            for c in paxg_candles:
+                                c["open"] = round(c["open"] + delta, 2)
+                                c["high"] = round(c["high"] + delta, 2)
+                                c["low"] = round(c["low"] + delta, 2)
+                                c["close"] = round(c["close"] + delta, 2)
                     merge_and_persist_candles("XAUUSD", paxg_candles, max_len=100000, save_to_disk=True)
 
             # 3. Forex & Commodities Live Prices (Yahoo Finance Real Market Data)
