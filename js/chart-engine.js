@@ -5453,10 +5453,7 @@ class ChartEngine {
                 </button>
                 <span class="dab-label" style="color: #38bdf8; font-size: 11px;">Lot: ${stats.lotSize}L</span>
                 <div class="dab-sep"></div>
-                <button type="button" class="dab-btn dab-danger" onclick="window.chartEngine.deleteDrawingById(${cellIndex}, '${drawingId}')" title="ลบกล่อง Position นี้ (✕)">
-                    <span>✕ ลบ</span>
-                </button>
-                <button type="button" class="dab-btn" onclick="window.chartEngine.deselectAllDrawings()" title="ยกเลิกการเลือก" style="padding: 3px 6px;">
+                <button type="button" class="dab-btn" onclick="window.chartEngine.deselectAllDrawings()" title="ปิดแถบเครื่องมือ (✓)" style="padding: 3px 6px;">
                     <span>✓</span>
                 </button>
             `;
@@ -5639,10 +5636,59 @@ class ChartEngine {
         this.showToast(`🗑️ ลบภาพวาดทั้งหมดบนชาร์ต ${cell.symbol} แล้ว`);
     }
 
+    drawingCoordToScreen(cell, pt, canvasW) {
+        if (!cell || !cell.chart || !pt) return { x: 0, y: 50 };
+        const w = canvasW || (cell.vpCanvas ? cell.vpCanvas.width : (cell.container ? cell.container.clientWidth : 800));
+        let x = cell.chart.timeScale().timeToCoordinate(pt.time);
+        let y = cell.candleSeries ? cell.candleSeries.priceToCoordinate(pt.price) : null;
+
+        if (x === null) {
+            if (cell.visibleCandles && cell.visibleCandles.length > 0) {
+                const firstT = cell.visibleCandles[0].time;
+                const lastT = cell.visibleCandles[cell.visibleCandles.length - 1].time;
+                const firstX = cell.chart.timeScale().timeToCoordinate(firstT) || 0;
+                const lastX = cell.chart.timeScale().timeToCoordinate(lastT) || w;
+                const barSpacing = (cell.chart.timeScale().options && cell.chart.timeScale().options().barSpacing) || 6;
+
+                if (pt.time < firstT) {
+                    const avgStep = (cell.visibleCandles.length > 1) ? (cell.visibleCandles[1].time - firstT) : 60;
+                    const barsDiff = (firstT - pt.time) / (avgStep || 1);
+                    x = firstX - barsDiff * barSpacing;
+                } else if (pt.time > lastT) {
+                    const avgStep = (cell.visibleCandles.length > 1) ? (lastT - cell.visibleCandles[cell.visibleCandles.length - 2].time) : 60;
+                    const barsDiff = (pt.time - lastT) / (avgStep || 1);
+                    x = lastX + barsDiff * barSpacing;
+                } else {
+                    let leftC = cell.visibleCandles[0];
+                    let rightC = cell.visibleCandles[cell.visibleCandles.length - 1];
+                    for (let i = 0; i < cell.visibleCandles.length - 1; i++) {
+                        if (cell.visibleCandles[i].time <= pt.time && cell.visibleCandles[i+1].time >= pt.time) {
+                            leftC = cell.visibleCandles[i];
+                            rightC = cell.visibleCandles[i+1];
+                            break;
+                        }
+                    }
+                    const lx = cell.chart.timeScale().timeToCoordinate(leftC.time) || 0;
+                    const rx = cell.chart.timeScale().timeToCoordinate(rightC.time) || w;
+                    const factor = (rightC.time > leftC.time) ? (pt.time - leftC.time) / (rightC.time - leftC.time) : 0;
+                    x = lx + factor * (rx - lx);
+                }
+            } else {
+                x = 0;
+            }
+        }
+
+        if (y === null) {
+            y = 50;
+        }
+        return { x, y };
+    }
+
     getDrawingDeleteBtnPos(d, cell, toScreen, canvasW, canvasH) {
         if (!d || !d.points || d.points.length === 0) return null;
+        const screenFn = toScreen || ((pt) => this.drawingCoordToScreen(cell, pt, canvasW));
         if (d.type === 'text') {
-            const p = toScreen(d.points[0]);
+            const p = screenFn(d.points[0]);
             const fontSize = d.fontSize || 14;
             const textStr = d.text || '';
             const approxW = Math.max(textStr.length * (fontSize * 0.72) + 24, 60);
@@ -5652,46 +5698,47 @@ class ChartEngine {
             return { x: boxX + approxW + 4, y: boxY - 4, r: 9 };
         }
         if (d.type === 'trendline' && d.points.length >= 2) {
-            const p2 = toScreen(d.points[1]);
+            const p2 = screenFn(d.points[1]);
             return { x: p2.x + 14, y: p2.y - 14, r: 9 };
         }
         if (d.type === 'rectangle' && d.points.length >= 2) {
-            const p1 = toScreen(d.points[0]);
-            const p2 = toScreen(d.points[1]);
+            const p1 = screenFn(d.points[0]);
+            const p2 = screenFn(d.points[1]);
             const maxX = d.extendRight ? canvasW - 20 : Math.max(p1.x, p2.x);
             const minY = Math.min(p1.y, p2.y);
             return { x: maxX + 10, y: minY - 10, r: 9 };
         }
         if ((d.type === 'long_position' || d.type === 'short_position') && d.points.length >= 3) {
-            const p0 = toScreen(d.points[0]);
-            const p1 = toScreen(d.points[1]);
-            const p2 = toScreen(d.points[2]);
+            const p0 = screenFn(d.points[0]);
+            const p1 = screenFn(d.points[1]);
+            const p2 = screenFn(d.points[2]);
             const rightX = Math.max(p0.x, p1.x);
             const topY = Math.min(p0.y, p1.y, p2.y);
-            const safeX = Math.max(50, Math.min(canvasW - 24, rightX - 14));
-            const safeY = Math.max(30, Math.min(canvasH - 30, topY + 14));
-            return { x: safeX, y: safeY, r: 10 };
+            // วางปุ่มลบ [✕] สีแดงที่มุมบนขวาของกล่อง Position ตามภาพ และจำกัดให้อยู่ในหน้าจอเสมอ
+            const safeX = Math.max(50, Math.min(canvasW - 20, rightX - 14));
+            const safeY = Math.max(20, Math.min(canvasH - 20, topY + 14));
+            return { x: safeX, y: safeY, r: 12 };
         }
         if (d.type === 'path' && d.points.length >= 2) {
             const lastPt = d.points[d.points.length - 1];
-            const p = toScreen(lastPt);
+            const p = screenFn(lastPt);
             return { x: p.x + 14, y: p.y - 14, r: 9 };
         }
         if (d.type === 'horzline') {
             const pt = d.points[0];
             let y = cell.candleSeries ? cell.candleSeries.priceToCoordinate(pt.price) : null;
-            if (y === null) y = toScreen(pt).y;
+            if (y === null) y = screenFn(pt).y;
             return { x: Math.max(60, canvasW - 140), y: y - 14, r: 9 };
         }
         if (d.type === 'horzray') {
-            const p1 = toScreen(d.points[0]);
+            const p1 = screenFn(d.points[0]);
             return { x: p1.x + 20, y: p1.y - 16, r: 9 };
         }
         if (d.type === 'vertline') {
-            const p1 = toScreen(d.points[0]);
+            const p1 = screenFn(d.points[0]);
             return { x: p1.x + 16, y: 40, r: 9 };
         }
-        const p0 = toScreen(d.points[0]);
+        const p0 = screenFn(d.points[0]);
         return { x: p0.x + 14, y: p0.y - 14, r: 9 };
     }
 
@@ -5699,30 +5746,13 @@ class ChartEngine {
         if (!cell || !cell.drawings) return null;
         const canvasW = (cell.vpCanvas && cell.vpCanvas.width) || (cell.container ? cell.container.clientWidth : 800);
         const canvasH = (cell.vpCanvas && cell.vpCanvas.height) || (cell.container ? cell.container.clientHeight : 600);
-
-        const toScreen = (pt) => {
-            let x = cell.chart.timeScale().timeToCoordinate(pt.time);
-            let y = cell.candleSeries ? cell.candleSeries.priceToCoordinate(pt.price) : null;
-            if (x === null) {
-                if (cell.visibleCandles && cell.visibleCandles.length > 0) {
-                    const firstT = cell.visibleCandles[0].time;
-                    const lastT = cell.visibleCandles[cell.visibleCandles.length - 1].time;
-                    if (pt.time < firstT) x = -100;
-                    else if (pt.time > lastT) x = canvasW + 100;
-                    else x = canvasW / 2;
-                } else {
-                    x = 0;
-                }
-            }
-            if (y === null) y = 50;
-            return { x, y };
-        };
+        const toScreen = (pt) => this.drawingCoordToScreen(cell, pt, canvasW);
 
         for (let i = cell.drawings.length - 1; i >= 0; i--) {
             const d = cell.drawings[i];
             if (!d || !d.points || d.points.length === 0) continue;
             const btn = this.getDrawingDeleteBtnPos(d, cell, toScreen, canvasW, canvasH);
-            if (btn && Math.hypot(px - btn.x, py - btn.y) <= btn.r + 8) {
+            if (btn && Math.hypot(px - btn.x, py - btn.y) <= btn.r + 10) {
                 return { type: 'DELETE_DRAWING', cellIndex: cell.index, drawingId: d.id, drawing: d };
             }
         }
@@ -5731,24 +5761,8 @@ class ChartEngine {
 
     getDrawingHitTest(cell, px, py) {
         if (!cell || !cell.drawings || cell.drawings.length === 0) return null;
-        const canvasW = cell.vpCanvas.width;
-
-        const toScreen = (pt) => {
-            let x = cell.chart.timeScale().timeToCoordinate(pt.time);
-            let y = cell.candleSeries.priceToCoordinate(pt.price);
-            if (x === null) {
-                if (cell.visibleCandles && cell.visibleCandles.length > 0) {
-                    const firstT = cell.visibleCandles[0].time;
-                    const lastT = cell.visibleCandles[cell.visibleCandles.length - 1].time;
-                    const firstX = cell.chart.timeScale().timeToCoordinate(firstT) || 0;
-                    const lastX = cell.chart.timeScale().timeToCoordinate(lastT) || canvasW;
-                    const progress = (pt.time - firstT) / (lastT - firstT || 1);
-                    x = firstX + progress * (lastX - firstX);
-                } else x = 0;
-            }
-            if (y === null) y = 50;
-            return { x, y };
-        };
+        const canvasW = (cell.vpCanvas && cell.vpCanvas.width) || (cell.container ? cell.container.clientWidth : 800);
+        const toScreen = (pt) => this.drawingCoordToScreen(cell, pt, canvasW);
 
         const distToSegment = (x, y, x1, y1, x2, y2) => {
             const A = x - x1;
@@ -5856,51 +5870,7 @@ class ChartEngine {
         const canvasW = cell.vpCanvas.width;
         const canvasH = cell.vpCanvas.height;
 
-        const toScreen = (pt) => {
-            let x = cell.chart.timeScale().timeToCoordinate(pt.time);
-            let y = cell.candleSeries ? cell.candleSeries.priceToCoordinate(pt.price) : null;
-
-            if (x === null) {
-                if (cell.visibleCandles && cell.visibleCandles.length > 0) {
-                    const firstT = cell.visibleCandles[0].time;
-                    const lastT = cell.visibleCandles[cell.visibleCandles.length - 1].time;
-                    if (pt.time < firstT) {
-                        const firstX = cell.chart.timeScale().timeToCoordinate(firstT) || 0;
-                        const barSpacing = (cell.chart.timeScale().options && cell.chart.timeScale().options().barSpacing) || 6;
-                        const avgStep = (cell.visibleCandles.length > 1) ? (cell.visibleCandles[1].time - firstT) : 60;
-                        const barsDiff = (firstT - pt.time) / (avgStep || 1);
-                        x = firstX - barsDiff * barSpacing;
-                    } else if (pt.time > lastT) {
-                        const lastX = cell.chart.timeScale().timeToCoordinate(lastT) || canvasW;
-                        const barSpacing = (cell.chart.timeScale().options && cell.chart.timeScale().options().barSpacing) || 6;
-                        const avgStep = (cell.visibleCandles.length > 1) ? (lastT - cell.visibleCandles[cell.visibleCandles.length - 2].time) : 60;
-                        const barsDiff = (pt.time - lastT) / (avgStep || 1);
-                        x = lastX + barsDiff * barSpacing;
-                    } else {
-                        let leftC = cell.visibleCandles[0];
-                        let rightC = cell.visibleCandles[cell.visibleCandles.length - 1];
-                        for (let i = 0; i < cell.visibleCandles.length - 1; i++) {
-                            if (cell.visibleCandles[i].time <= pt.time && cell.visibleCandles[i+1].time >= pt.time) {
-                                leftC = cell.visibleCandles[i];
-                                rightC = cell.visibleCandles[i+1];
-                                break;
-                            }
-                        }
-                        const lx = cell.chart.timeScale().timeToCoordinate(leftC.time) || 0;
-                        const rx = cell.chart.timeScale().timeToCoordinate(rightC.time) || canvasW;
-                        const factor = (rightC.time > leftC.time) ? (pt.time - leftC.time) / (rightC.time - leftC.time) : 0;
-                        x = lx + factor * (rx - lx);
-                    }
-                } else {
-                    x = 0;
-                }
-            }
-
-            if (y === null) {
-                y = 50;
-            }
-            return { x, y };
-        };
+        const toScreen = (pt) => this.drawingCoordToScreen(cell, pt, canvasW);
 
         const isGold = cell.symbol.includes('XAU') || cell.symbol.includes('GOLD');
         const isForex = cell.symbol.includes('EUR') || cell.symbol.includes('GBP') || cell.symbol.includes('JPY') || cell.symbol.includes('AUD');
