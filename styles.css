@@ -2566,6 +2566,11 @@ svg[aria-label*="TradingView"] {
     background: #dc2626;
     border-color: #ef4444;
 }
+.dab-btn.dab-active {
+    background: rgba(56, 189, 248, 0.2);
+    border-color: #38bdf8;
+    color: #38bdf8;
+}
 .dab-label {
     font-size: 11px;
     font-weight: 700;

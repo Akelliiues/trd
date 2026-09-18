@@ -1076,10 +1076,44 @@ class ChartEngine {
                             });
                         }
 
+                        // ตรวจสอบ Handle ของ Long & Short Position (TP, SL, Time Edge, Move)
+                        let dragHandle = 'move';
+                        let dragCursor = 'move';
+                        if ((hitDrawing.type === 'long_position' || hitDrawing.type === 'short_position') && hitDrawing.points && hitDrawing.points.length >= 3) {
+                            const canvasW = (cellObj.vpCanvas && cellObj.vpCanvas.width) || (cellObj.container ? cellObj.container.clientWidth : 800);
+                            const p0 = this.drawingCoordToScreen(cellObj, hitDrawing.points[0], canvasW);
+                            const p1 = this.drawingCoordToScreen(cellObj, hitDrawing.points[1], canvasW);
+                            const p2 = this.drawingCoordToScreen(cellObj, hitDrawing.points[2], canvasW);
+                            const startX = Math.min(p0.x, p1.x);
+                            const endX = Math.max(p0.x, p1.x);
+                            const width = Math.max(30, endX - startX);
+                            const targetY = p1.y;
+                            const stopY = p2.y;
+                            const entryY = p0.y;
+
+                            const distToTpHan = Math.hypot(coords.x - (startX + width), coords.y - targetY);
+                            const nearTpLine = (coords.x >= startX - 4 && coords.x <= startX + width + 14 && Math.abs(coords.y - targetY) <= 12);
+                            const distToSlHan = Math.hypot(coords.x - (startX + width), coords.y - stopY);
+                            const nearSlLine = (coords.x >= startX - 4 && coords.x <= startX + width + 14 && Math.abs(coords.y - stopY) <= 12);
+                            const nearRightEdge = (Math.abs(coords.x - (startX + width)) <= 10 && coords.y >= Math.min(targetY, stopY, entryY) - 8 && coords.y <= Math.max(targetY, stopY, entryY) + 8);
+
+                            if (distToTpHan <= 18 || nearTpLine) {
+                                dragHandle = 'tp';
+                                dragCursor = 'ns-resize';
+                            } else if (distToSlHan <= 18 || nearSlLine) {
+                                dragHandle = 'sl';
+                                dragCursor = 'ns-resize';
+                            } else if (nearRightEdge) {
+                                dragHandle = 'edge';
+                                dragCursor = 'ew-resize';
+                            }
+                        }
+
                         // เริ่มระบบ Drag & Move ย้ายตำแหน่งภาพวาด
                         cellObj.activeDrawingDrag = {
                             drawingId: hitDrawing.id,
                             drawing: hitDrawing,
+                            dragHandle: dragHandle,
                             startCoords: { ...coords },
                             anchorOffsetX: coords.x - anchorScreenX,
                             anchorOffsetY: coords.y - anchorScreenY,
@@ -1087,10 +1121,18 @@ class ChartEngine {
                             isDragging: false,
                             pointerDownTime: now
                         };
-                        viewport.style.cursor = 'move';
+                        viewport.style.cursor = dragCursor;
                         this.showDrawingActionBar(cellObj, hitDrawing);
                         this.updateOverlays(cellObj);
-                        this.showToast(`📌 เลือก ${this.getToolDisplayName(hitDrawing.type)} (ลากเพื่อย้าย | A−/A+ ย่อขยาย | Delete เพื่อลบ)`);
+                        if (dragHandle === 'tp') {
+                            this.showToast('🎯 ปรับระดับเป้าหมาย Take Profit (TP)');
+                        } else if (dragHandle === 'sl') {
+                            this.showToast('🛑 ปรับระดับความเสี่ยง Stop Loss (SL)');
+                        } else if (dragHandle === 'edge') {
+                            this.showToast('↔ ปรับความกว้าง/ระยะเวลาของกล่อง');
+                        } else {
+                            this.showToast(`📌 เลือก ${this.getToolDisplayName(hitDrawing.type)} (ลากเส้น TP/SL เพื่อปรับ R:R | ลากเพื่อย้าย)`);
+                        }
                         return;
                     } else if (cellObj.selectedDrawingId) {
                         cellObj.selectedDrawingId = null;
@@ -1157,7 +1199,64 @@ class ChartEngine {
                 const dy = curMouseCoords.y - drag.startCoords.y;
                 if (Math.hypot(dx, dy) > 2) {
                     drag.isDragging = true;
-                    if (drag.drawing.type === 'text') {
+                    if (drag.drawing.type === 'long_position' || drag.drawing.type === 'short_position') {
+                        const isGold = cellObj.symbol.includes('XAU') || cellObj.symbol.includes('GOLD');
+                        const isForex = cellObj.symbol.includes('EUR') || cellObj.symbol.includes('GBP') || cellObj.symbol.includes('JPY') || cellObj.symbol.includes('AUD');
+                        const decimals = isGold ? 3 : (isForex ? 5 : 2);
+
+                        if (drag.dragHandle === 'tp') {
+                            const rawPrice = cellObj.candleSeries ? cellObj.candleSeries.coordinateToPrice(curMouseCoords.y) : null;
+                            const targetPrice = (rawPrice !== null) ? rawPrice : curMouseCoords.price;
+                            if (targetPrice !== null) {
+                                drag.drawing.points[1].price = Number(targetPrice.toFixed(decimals));
+                                viewport.style.cursor = 'ns-resize';
+                            }
+                        } else if (drag.dragHandle === 'sl') {
+                            const rawPrice = cellObj.candleSeries ? cellObj.candleSeries.coordinateToPrice(curMouseCoords.y) : null;
+                            const stopPrice = (rawPrice !== null) ? rawPrice : curMouseCoords.price;
+                            if (stopPrice !== null) {
+                                drag.drawing.points[2].price = Number(stopPrice.toFixed(decimals));
+                                viewport.style.cursor = 'ns-resize';
+                            }
+                        } else if (drag.dragHandle === 'edge') {
+                            if (curMouseCoords.time !== null) {
+                                drag.drawing.points[1].time = curMouseCoords.time;
+                                drag.drawing.points[2].time = curMouseCoords.time;
+                                viewport.style.cursor = 'ew-resize';
+                            }
+                        } else {
+                            // ย้ายตำแหน่งกล่อง Position ทั้งก้อน (รักษา R:R เดิม)
+                            const startAnchor = drag.origPoints[0];
+                            if (startAnchor) {
+                                let startScreenX = drag.startCoords.x;
+                                let startScreenY = drag.startCoords.y;
+                                const sx = cellObj.chart.timeScale().timeToCoordinate(startAnchor.time);
+                                const sy = cellObj.candleSeries ? cellObj.candleSeries.priceToCoordinate(startAnchor.price) : null;
+                                if (sx !== null) startScreenX = sx;
+                                if (sy !== null) startScreenY = sy;
+
+                                const targetAnchorX = startScreenX + dx;
+                                const targetAnchorY = startScreenY + dy;
+                                const newAnchorCoords = getChartCoords(e, targetAnchorX, targetAnchorY);
+
+                                const deltaTime = (newAnchorCoords.time !== null && startAnchor.time !== null)
+                                    ? (newAnchorCoords.time - startAnchor.time)
+                                    : 0;
+                                const deltaPrice = (newAnchorCoords.price !== null && startAnchor.price !== null)
+                                    ? (newAnchorCoords.price - startAnchor.price)
+                                    : 0;
+
+                                drag.drawing.points = drag.origPoints.map(pt => ({
+                                    time: pt.time + deltaTime,
+                                    price: Number((pt.price + deltaPrice).toFixed(decimals))
+                                }));
+                                viewport.style.cursor = 'move';
+                            }
+                        }
+                        this.updateOverlays(cellObj);
+                        this.updateDrawingActionBarPosition(cellObj, drag.drawing);
+                        this.showDrawingActionBar(cellObj, drag.drawing);
+                    } else if (drag.drawing.type === 'text') {
                         // คำนวณตำแหน่ง Anchor โดยชดเชยระยะออฟเซ็ตจากจุดที่คลิก
                         const targetAnchorX = curMouseCoords.x - (drag.anchorOffsetX || 0);
                         const targetAnchorY = curMouseCoords.y - (drag.anchorOffsetY || 0);
@@ -1165,14 +1264,20 @@ class ChartEngine {
                         if (anchorCoords.time !== null && anchorCoords.price !== null) {
                             drag.drawing.points = [{ time: anchorCoords.time, price: anchorCoords.price }];
                         }
+                        this.updateOverlays(cellObj);
+                        this.updateDrawingActionBarPosition(cellObj, drag.drawing);
                     } else if (drag.drawing.type === 'vertline') {
                         if (curMouseCoords.time !== null) {
                             drag.drawing.points = [{ time: curMouseCoords.time, price: curMouseCoords.price }];
                         }
+                        this.updateOverlays(cellObj);
+                        this.updateDrawingActionBarPosition(cellObj, drag.drawing);
                     } else if (drag.drawing.type === 'horzline' || drag.drawing.type === 'horzray') {
                         if (curMouseCoords.price !== null) {
                             drag.drawing.points = [{ time: curMouseCoords.time, price: curMouseCoords.price }];
                         }
+                        this.updateOverlays(cellObj);
+                        this.updateDrawingActionBarPosition(cellObj, drag.drawing);
                     } else {
                         // Multi-point drawings (trendline, rectangle, path)
                         const startAnchor = drag.origPoints[0];
@@ -1200,9 +1305,9 @@ class ChartEngine {
                                 price: pt.price + deltaPrice
                             }));
                         }
+                        this.updateOverlays(cellObj);
+                        this.updateDrawingActionBarPosition(cellObj, drag.drawing);
                     }
-                    this.updateOverlays(cellObj);
-                    this.updateDrawingActionBarPosition(cellObj, drag.drawing);
                 }
                 return;
             }
@@ -1239,7 +1344,7 @@ class ChartEngine {
                 return;
             }
 
-            // E. Hover บนปุ่ม [✕] ของภาพวาด หรือปุ่ม Order
+            // E. Hover บนปุ่ม [✕] ของภาพวาด, ปุ่ม Order, หรือ Handle ของ Position
             if (!this.isMeasureActive && !this.isFibonacciActive && !this.activeDrawingTool && !e.shiftKey) {
                 const coords = getChartCoords(e);
                 const hitDeleteBtn = this.getDrawingDeleteButtonHit(cellObj, coords.x, coords.y);
@@ -1254,9 +1359,38 @@ class ChartEngine {
                     } else {
                         viewport.style.cursor = 'ns-resize';
                     }
-                } else {
-                    viewport.style.cursor = '';
+                    return;
                 }
+                if (cellObj.selectedDrawingId) {
+                    const selD = (cellObj.drawings || []).find(d => d.id === cellObj.selectedDrawingId);
+                    if (selD && (selD.type === 'long_position' || selD.type === 'short_position') && selD.points && selD.points.length >= 3) {
+                        const canvasW = (cellObj.vpCanvas && cellObj.vpCanvas.width) || (cellObj.container ? cellObj.container.clientWidth : 800);
+                        const p0 = this.drawingCoordToScreen(cellObj, selD.points[0], canvasW);
+                        const p1 = this.drawingCoordToScreen(cellObj, selD.points[1], canvasW);
+                        const p2 = this.drawingCoordToScreen(cellObj, selD.points[2], canvasW);
+                        const startX = Math.min(p0.x, p1.x);
+                        const endX = Math.max(p0.x, p1.x);
+                        const width = Math.max(30, endX - startX);
+                        const targetY = p1.y;
+                        const stopY = p2.y;
+                        const entryY = p0.y;
+
+                        const distToTpHan = Math.hypot(coords.x - (startX + width), coords.y - targetY);
+                        const nearTpLine = (coords.x >= startX - 4 && coords.x <= startX + width + 14 && Math.abs(coords.y - targetY) <= 10);
+                        const distToSlHan = Math.hypot(coords.x - (startX + width), coords.y - stopY);
+                        const nearSlLine = (coords.x >= startX - 4 && coords.x <= startX + width + 14 && Math.abs(coords.y - stopY) <= 10);
+                        const nearRightEdge = (Math.abs(coords.x - (startX + width)) <= 8 && coords.y >= Math.min(targetY, stopY, entryY) - 6 && coords.y <= Math.max(targetY, stopY, entryY) + 6);
+
+                        if (distToTpHan <= 16 || nearTpLine || distToSlHan <= 16 || nearSlLine) {
+                            viewport.style.cursor = 'ns-resize';
+                            return;
+                        } else if (nearRightEdge) {
+                            viewport.style.cursor = 'ew-resize';
+                            return;
+                        }
+                    }
+                }
+                viewport.style.cursor = '';
             }
         };
 
@@ -1265,7 +1399,13 @@ class ChartEngine {
             if (cellObj.activeDrawingDrag) {
                 if (cellObj.activeDrawingDrag.isDragging) {
                     this.saveDrawings(cellObj.symbol, cellObj.drawings);
-                    this.showToast('✓ ย้ายตำแหน่งภาพวาดเรียบร้อย');
+                    const dragD = cellObj.activeDrawingDrag.drawing;
+                    if (dragD && (dragD.type === 'long_position' || dragD.type === 'short_position')) {
+                        const stats = this.calculatePositionStats(dragD, cellObj.symbol);
+                        this.showToast(`✓ ปรับระดับ ${dragD.type === 'long_position' ? 'Long' : 'Short'} (R:R 1:${stats.rr} | TP: ${dragD.points[1].price} | SL: ${dragD.points[2].price})`);
+                    } else {
+                        this.showToast('✓ ย้ายตำแหน่งภาพวาดเรียบร้อย');
+                    }
                 }
                 viewport.style.cursor = '';
                 cellObj.activeDrawingDrag = null;
@@ -5446,10 +5586,30 @@ class ChartEngine {
             const stats = this.calculatePositionStats(drawing, cell.symbol);
             const isLong = (drawing.type === 'long_position');
             bar.innerHTML = `
-                <span class="dab-label" style="color: ${isLong ? '#10b981' : '#ef4444'}; font-weight: bold;">${isLong ? '▲ LONG' : '▼ SHORT'} R:R 1:${stats.rr}</span>
+                <span class="dab-label" style="color: ${isLong ? '#10b981' : '#ef4444'}; font-weight: bold;">${isLong ? '▲ LONG' : '▼ SHORT'}</span>
+                <div class="dab-sep"></div>
+                <button type="button" class="dab-btn" onclick="window.chartEngine.stepPositionRR(${cellIndex}, '${drawingId}', -0.5)" title="ลดอัตรา R:R (-0.5R)">
+                    <span>R−</span>
+                </button>
+                <button type="button" class="dab-btn dab-active" onclick="window.chartEngine.promptPositionRR(${cellIndex}, '${drawingId}')" title="คลิกเพื่อพิมพ์ค่า R:R เช่น 1.5, 2.0, 3.2">
+                    <span style="color: #38bdf8; font-weight: bold;">🎯 1:${stats.rr}</span>
+                </button>
+                <button type="button" class="dab-btn" onclick="window.chartEngine.stepPositionRR(${cellIndex}, '${drawingId}', 0.5)" title="เพิ่มอัตรา R:R (+0.5R)">
+                    <span>R+</span>
+                </button>
+                <div class="dab-sep"></div>
+                <button type="button" class="dab-btn ${stats.rr === '1.50' ? 'dab-active' : ''}" onclick="window.chartEngine.setPositionRR(${cellIndex}, '${drawingId}', 1.5)" title="ตั้งค่า R:R 1:1.5">
+                    <span>1:1.5</span>
+                </button>
+                <button type="button" class="dab-btn ${stats.rr === '2.00' ? 'dab-active' : ''}" onclick="window.chartEngine.setPositionRR(${cellIndex}, '${drawingId}', 2.0)" title="ตั้งค่า R:R 1:2.0">
+                    <span>1:2</span>
+                </button>
+                <button type="button" class="dab-btn ${stats.rr === '3.00' ? 'dab-active' : ''}" onclick="window.chartEngine.setPositionRR(${cellIndex}, '${drawingId}', 3.0)" title="ตั้งค่า R:R 1:3.0">
+                    <span>1:3</span>
+                </button>
                 <div class="dab-sep"></div>
                 <button type="button" class="dab-btn" onclick="window.chartEngine.cyclePositionRisk(${cellIndex}, '${drawingId}')" title="คลิกเพื่อเปลี่ยนเงินทุนเสี่ยง ($50, $100, $200, $500, $1000)">
-                    <span>💰 เสี่ยง: $${drawing.riskAmount || 100}</span>
+                    <span>💰 $${drawing.riskAmount || 100}</span>
                 </button>
                 <span class="dab-label" style="color: #38bdf8; font-size: 11px;">Lot: ${stats.lotSize}L</span>
                 <div class="dab-sep"></div>
@@ -5541,6 +5701,73 @@ class ChartEngine {
         this.updateOverlays(cell);
         this.showDrawingActionBar(cell, d);
         this.showToast(`💰 เปลี่ยนความเสี่ยงเป็น $${d.riskAmount} USD`);
+    }
+
+    setPositionRR(cellIndex, drawingId, targetRR) {
+        const idx = cellIndex !== undefined ? cellIndex : this.activeChartIndex;
+        const cell = this.charts[idx];
+        if (!cell) return;
+        const d = (cell.drawings || []).find(item => item.id === drawingId);
+        if (!d || (d.type !== 'long_position' && d.type !== 'short_position') || !d.points || d.points.length < 3) return;
+
+        const rrNum = Math.max(0.1, Number(targetRR));
+        if (isNaN(rrNum) || rrNum <= 0) return;
+
+        const isLong = (d.type === 'long_position');
+        const entryPrice = d.points[0].price;
+        let stopPrice = d.points[2].price;
+        const isGold = cell.symbol.includes('XAU') || cell.symbol.includes('GOLD');
+        const isForex = cell.symbol.includes('EUR') || cell.symbol.includes('GBP') || cell.symbol.includes('JPY') || cell.symbol.includes('AUD');
+        const decimals = isGold ? 3 : (isForex ? 5 : 2);
+
+        let risk = isLong ? (entryPrice - stopPrice) : (stopPrice - entryPrice);
+        if (risk <= 0) {
+            risk = isGold ? 3.0 : (isForex ? 0.0030 : (cell.symbol.includes('BTC') ? 500 : (entryPrice * 0.01)));
+            stopPrice = isLong ? (entryPrice - risk) : (entryPrice + risk);
+            d.points[2].price = Number(stopPrice.toFixed(decimals));
+        }
+
+        const reward = risk * rrNum;
+        const newTargetPrice = isLong ? (entryPrice + reward) : (entryPrice - reward);
+        d.points[1].price = Number(newTargetPrice.toFixed(decimals));
+
+        this.saveDrawings(cell.symbol, cell.drawings);
+        this.updateOverlays(cell);
+        this.showDrawingActionBar(cell, d);
+        this.showToast(`🎯 ปรับอัตรา R:R เป็น 1:${rrNum.toFixed(2)} (TP: ${d.points[1].price})`);
+    }
+
+    stepPositionRR(cellIndex, drawingId, delta) {
+        const idx = cellIndex !== undefined ? cellIndex : this.activeChartIndex;
+        const cell = this.charts[idx];
+        if (!cell) return;
+        const d = (cell.drawings || []).find(item => item.id === drawingId);
+        if (!d || (d.type !== 'long_position' && d.type !== 'short_position')) return;
+
+        const stats = this.calculatePositionStats(d, cell.symbol);
+        const curRR = parseFloat(stats.rr) || 2.0;
+        let nextRR = Math.round((curRR + delta) * 10) / 10;
+        if (nextRR < 0.2) nextRR = 0.2;
+        this.setPositionRR(cellIndex, drawingId, nextRR);
+    }
+
+    promptPositionRR(cellIndex, drawingId) {
+        const idx = cellIndex !== undefined ? cellIndex : this.activeChartIndex;
+        const cell = this.charts[idx];
+        if (!cell) return;
+        const d = (cell.drawings || []).find(item => item.id === drawingId);
+        if (!d || (d.type !== 'long_position' && d.type !== 'short_position')) return;
+
+        const stats = this.calculatePositionStats(d, cell.symbol);
+        const input = prompt('ระบุอัตรา Risk:Reward Ratio (เช่น 1.5, 2.0, 2.5, 3.0, 5.0):', stats.rr);
+        if (input !== null) {
+            const val = parseFloat(input);
+            if (!isNaN(val) && val > 0) {
+                this.setPositionRR(cellIndex, drawingId, val);
+            } else {
+                this.showToast('⚠️ กรุณาระบุค่า R:R เป็นตัวเลขมากกว่า 0');
+            }
+        }
     }
 
     getAlertHitTest(cellObj, px, py) {
@@ -6199,21 +6426,49 @@ class ChartEngine {
                 ctx.lineTo(startX + width, entryY);
                 ctx.stroke();
 
-                // Vertex Anchors
+                // Vertex Anchors & Drag Grips
                 ctx.fillStyle = '#38bdf8';
                 ctx.beginPath();
-                ctx.arc(startX, entryY, 4, 0, Math.PI * 2);
+                ctx.arc(startX, entryY, isSelected ? 5 : 4, 0, Math.PI * 2);
                 ctx.fill();
+                if (isSelected) {
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 1.2;
+                    ctx.stroke();
+                }
 
+                // TP Handle Grip (Green)
                 ctx.fillStyle = '#10b981';
                 ctx.beginPath();
-                ctx.arc(startX + width, targetY, 4, 0, Math.PI * 2);
+                ctx.arc(startX + width, targetY, isSelected ? 6 : 4, 0, Math.PI * 2);
                 ctx.fill();
+                if (isSelected) {
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+                }
 
+                // SL Handle Grip (Red)
                 ctx.fillStyle = '#ef4444';
                 ctx.beginPath();
-                ctx.arc(startX + width, stopY, 4, 0, Math.PI * 2);
+                ctx.arc(startX + width, stopY, isSelected ? 6 : 4, 0, Math.PI * 2);
                 ctx.fill();
+                if (isSelected) {
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+                }
+
+                // Time Edge Grip (Gray)
+                if (isSelected) {
+                    ctx.fillStyle = '#94a3b8';
+                    ctx.beginPath();
+                    ctx.arc(startX + width, entryY, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 1.2;
+                    ctx.stroke();
+                }
 
                 // 4. คำนวณ Stats (R:R, Pips, Lot Size)
                 const stats = this.calculatePositionStats(d, cell.symbol);
