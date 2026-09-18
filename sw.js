@@ -3,26 +3,26 @@
  * ให้ความเร็วสูงสุดในการโหลดบนมือถือ/แท็บเล็ต พร้อมระบบ Offline Caching และ Auto Force Update
  */
 
-const CACHE_NAME = 'tradingtools-v2.6.0';
+const CACHE_NAME = 'tradingtools-v2.6.1';
 
 // ทรัพยากรหลักที่ต้อง Cache ทันทีที่ติดตั้ง (App Shell)
 const STATIC_ASSETS = [
     '/',
     '/index.html',
-    '/index.html?v=2.6.0',
-    '/styles.css?v=2.6.0',
-    '/manifest.json?v=2.6.0',
-    '/js/app.js?v=2.6.0',
-    '/js/chart-engine.js?v=2.6.0',
-    '/js/indicators.js?v=2.6.0',
-    '/js/lightweight-charts.js?v=2.6.0',
-    '/js/replay-engine.js?v=2.6.0',
-    '/js/volume-profile.js?v=2.6.0',
-    '/js/footprint.js?v=2.6.0',
-    '/js/patterns.js?v=2.6.0',
-    '/js/journal.js?v=2.6.0',
-    '/js/watchlist.js?v=2.6.0',
-    '/js/resampler.js?v=2.6.0',
+    '/index.html?v=2.6.1',
+    '/styles.css?v=2.6.1',
+    '/manifest.json?v=2.6.1',
+    '/js/app.js?v=2.6.1',
+    '/js/chart-engine.js?v=2.6.1',
+    '/js/indicators.js?v=2.6.1',
+    '/js/lightweight-charts.js?v=2.6.1',
+    '/js/replay-engine.js?v=2.6.1',
+    '/js/volume-profile.js?v=2.6.1',
+    '/js/footprint.js?v=2.6.1',
+    '/js/patterns.js?v=2.6.1',
+    '/js/journal.js?v=2.6.1',
+    '/js/watchlist.js?v=2.6.1',
+    '/js/resampler.js?v=2.6.1',
     '/icons/icon.svg',
     '/icons/icon-192.png',
     '/icons/icon-512.png',

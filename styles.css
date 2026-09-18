@@ -4848,3 +4848,85 @@ body.theme-light .ind-modal-col input[type="text"] {
 body.theme-light .modal-overlay * {
     border-color: inherit;
 }
+
+/* ---------------------------------------------------------
+   PRICE ALERT POPUP BANNER (Modern Glassmorphism HUD)
+   --------------------------------------------------------- */
+.price-alert-banner {
+    position: fixed;
+    top: 54px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-20px);
+    z-index: 99999;
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.95), rgba(217, 119, 6, 0.95));
+    color: #ffffff;
+    box-shadow: 0 12px 32px rgba(245, 158, 11, 0.4), 0 4px 12px rgba(0, 0, 0, 0.5);
+    border-radius: 12px;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: 90vw;
+    min-width: 320px;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.price-alert-banner.visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+    pointer-events: auto;
+}
+
+.pab-icon {
+    font-size: 24px;
+    animation: pab-bell-ring 1s infinite alternate ease-in-out;
+}
+
+@keyframes pab-bell-ring {
+    0% { transform: rotate(-15deg); }
+    100% { transform: rotate(15deg); }
+}
+
+.pab-content {
+    flex: 1;
+}
+
+.pab-title {
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+    color: #ffffff;
+}
+
+.pab-msg {
+    font-size: 11.5px;
+    opacity: 0.95;
+    margin-top: 1px;
+}
+
+.pab-dismiss {
+    background: rgba(0, 0, 0, 0.2);
+    border: none;
+    color: #ffffff;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease;
+}
+
+.pab-dismiss:hover {
+    background: rgba(0, 0, 0, 0.4);
+}
+
+.dab-btn.dab-active {
+    background: rgba(255, 255, 255, 0.15) !important;
+    border-color: rgba(255, 255, 255, 0.3) !important;
+}
+

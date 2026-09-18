@@ -130,10 +130,14 @@ class ChartEngine {
         this.isMeasureActive = false;
         this.isFibonacciActive = false;
 
-        // Interactive Drawing Tools Engine (7 Tools: Trendline, HorzLine, HorzRay, VertLine, Rectangle, Path, Text)
+        // Interactive Drawing Tools Engine (Trendline, HorzLine, HorzRay, VertLine, Rectangle, Path, Text, Long/Short Position, Price Alert)
         this.activeDrawingTool = null;
         this.pendingTextCoords = null;
         this.theme = localStorage.getItem('tradingtools_theme') || 'dark';
+
+        // ระบบแจ้งเตือนราคาแบบเรียลไทม์ (Price Alerts Engine)
+        this.priceAlerts = this.loadPriceAlerts();
+        this.lastKnownAlertPrice = {};
 
         // คีย์ลัด Alt+R รีเซ็ตกราฟ, Alt+F วาด Fibonacci, Alt+M วัดระยะ, Shift สำหรับ Fast Measure, Delete ลบภาพวาด, และ Escape เคลียร์การวาด
         window.addEventListener('keydown', (e) => {
@@ -815,7 +819,17 @@ class ChartEngine {
 
             const coords = getChartCoords(e);
 
-            // 0. ตรวจสอบคลิกปุ่ม [✕] เพื่อลบภาพวาดที่กำลัง Active อิสระทันที
+            // 0. ตรวจสอบคลิกปุ่ม [✕] เพื่อลบการแจ้งเตือนราคา (Price Alert) หรือภาพวาดที่กำลัง Active ทันที
+            const hitAlert = this.getAlertHitTest(cellObj, coords.x, coords.y);
+            if (hitAlert) {
+                if (e.cancelable) e.preventDefault();
+                e.stopPropagation();
+                if (hitAlert.action === 'delete') {
+                    this.deletePriceAlert(cellObj.symbol, hitAlert.alertId);
+                }
+                return;
+            }
+
             const hitDeleteBtn = this.getDrawingDeleteButtonHit(cellObj, coords.x, coords.y);
             if (hitDeleteBtn) {
                 if (e.cancelable) e.preventDefault();
@@ -2522,6 +2536,11 @@ class ChartEngine {
                 if (window.replayEngine.checkLiveOrders) window.replayEngine.checkLiveOrders(cell.symbol, price);
                 if (window.replayEngine.updateFloatingPnL) window.replayEngine.updateFloatingPnL(cell.symbol, price);
             }
+
+            // ตรวจสอบ Price Alerts เมื่อราคาเคลื่อนผ่าน
+            if (this.checkPriceAlerts) {
+                this.checkPriceAlerts(cell.symbol, price);
+            }
         }
     }
 
@@ -2629,6 +2648,11 @@ class ChartEngine {
             if (window.replayEngine) {
                 if (window.replayEngine.checkLiveOrders) window.replayEngine.checkLiveOrders(cell.symbol, price);
                 if (window.replayEngine.updateFloatingPnL) window.replayEngine.updateFloatingPnL(cell.symbol, price);
+            }
+
+            // ตรวจสอบ Price Alerts เมื่อราคาเคลื่อนผ่าน
+            if (this.checkPriceAlerts) {
+                this.checkPriceAlerts(cell.symbol, price);
             }
         }
     }
@@ -3074,6 +3098,11 @@ class ChartEngine {
                 if (window.replayEngine.updateFloatingPnL) {
                     window.replayEngine.updateFloatingPnL(cell.symbol, livePrice);
                 }
+            }
+
+            // ตรวจสอบ Price Alerts เมื่อราคาเคลื่อนผ่าน
+            if (this.checkPriceAlerts) {
+                this.checkPriceAlerts(cell.symbol, livePrice);
             }
         }
     }
@@ -4321,8 +4350,29 @@ class ChartEngine {
         }
 
         const cell = this.charts[index];
+        if (!cell) return;
+
+        const isGold = cell.symbol.includes('XAU') || cell.symbol.includes('GOLD');
+        const isForex = cell.symbol.includes('EUR') || cell.symbol.includes('GBP') || cell.symbol.includes('JPY') || cell.symbol.includes('AUD');
+        const decimals = isGold ? 3 : (isForex ? 5 : 2);
+
+        let clickedPrice = null;
+        if (cell.candleSeries && cell.viewport) {
+            const rect = cell.viewport.getBoundingClientRect();
+            const relY = e.clientY - rect.top;
+            clickedPrice = cell.candleSeries.coordinateToPrice(relY);
+        }
+        if (clickedPrice === null) {
+            const lastC = cell.visibleCandles?.[cell.visibleCandles.length - 1];
+            clickedPrice = lastC ? lastC.close : 2000;
+        }
+        const safeAlertPrice = Number(clickedPrice.toFixed(decimals));
 
         menu.innerHTML = `
+            <button class="ctx-item primary" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3);" onclick="window.chartEngine.addPriceAlert('${cell.symbol}', ${safeAlertPrice})">
+                <span>🔔 ตั้งแจ้งเตือนราคา ($${safeAlertPrice.toFixed(decimals)})</span>
+            </button>
+            <div class="ctx-sep"></div>
             <button class="ctx-item primary" onclick="window.chartEngine.resetChartScale(${index})">
                 <span>↺ รีเซ็ตมุมมองกราฟ (Reset Chart)</span>
                 <span class="ctx-shortcut">Alt+R</span>
@@ -4420,7 +4470,249 @@ class ChartEngine {
     }
 
     // =========================================================
-    // INTERACTIVE DRAWING TOOLS ENGINE (v2.5.2)
+    // REAL-TIME PRICE ALERTS ENGINE (with Web Audio Chime)
+    // =========================================================
+
+    loadPriceAlerts() {
+        try {
+            const raw = localStorage.getItem('tradingtools_price_alerts');
+            return raw ? JSON.parse(raw) : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    savePriceAlerts() {
+        try {
+            localStorage.setItem('tradingtools_price_alerts', JSON.stringify(this.priceAlerts || []));
+        } catch (e) {}
+    }
+
+    playAlertSound() {
+        try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return;
+            const ctx = new AudioCtx();
+            const now = ctx.currentTime;
+            
+            // Tone 1: E5 (659.25Hz)
+            const osc1 = ctx.createOscillator();
+            const gain1 = ctx.createGain();
+            osc1.type = 'sine';
+            osc1.frequency.setValueAtTime(659.25, now);
+            gain1.gain.setValueAtTime(0.3, now);
+            gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+            osc1.connect(gain1);
+            gain1.connect(ctx.destination);
+            osc1.start(now);
+            osc1.stop(now + 0.35);
+
+            // Tone 2: B5 (987.77Hz)
+            const osc2 = ctx.createOscillator();
+            const gain2 = ctx.createGain();
+            osc2.type = 'sine';
+            osc2.frequency.setValueAtTime(987.77, now + 0.12);
+            gain2.gain.setValueAtTime(0.35, now + 0.12);
+            gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+            osc2.connect(gain2);
+            gain2.connect(ctx.destination);
+            osc2.start(now + 0.12);
+            osc2.stop(now + 0.6);
+        } catch (e) {
+            console.warn('AudioContext beep error:', e);
+        }
+    }
+
+    addPriceAlert(symbol, price, note = '') {
+        if (!symbol || typeof price !== 'number') return;
+        const isGold = symbol.includes('XAU') || symbol.includes('GOLD');
+        const isForex = symbol.includes('EUR') || symbol.includes('GBP') || symbol.includes('JPY') || symbol.includes('AUD');
+        const decimals = isGold ? 3 : (isForex ? 5 : 2);
+        const alertPrice = Number(price.toFixed(decimals));
+
+        if (!this.priceAlerts) this.priceAlerts = [];
+        const alert = {
+            id: 'alert_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+            symbol,
+            price: alertPrice,
+            note: note || '',
+            triggered: false,
+            createdAt: Date.now()
+        };
+
+        this.priceAlerts.push(alert);
+        this.savePriceAlerts();
+
+        this.charts.forEach(c => {
+            if (c.symbol === symbol) this.updateOverlays(c);
+        });
+
+        this.showToast(`🔔 ตั้งแจ้งเตือนราคา ${symbol} ที่ $${alertPrice.toFixed(decimals)} เรียบร้อย`);
+    }
+
+    deletePriceAlert(alertId) {
+        if (!this.priceAlerts) return;
+        this.priceAlerts = this.priceAlerts.filter(a => a.id !== alertId);
+        this.savePriceAlerts();
+        this.charts.forEach(c => this.updateOverlays(c));
+        this.showToast('🗑️ ลบการแจ้งเตือนราคาเรียบร้อย');
+    }
+
+    clearAllPriceAlerts(symbol) {
+        if (!this.priceAlerts) return;
+        this.priceAlerts = this.priceAlerts.filter(a => a.symbol !== symbol);
+        this.savePriceAlerts();
+        this.charts.forEach(c => {
+            if (c.symbol === symbol) this.updateOverlays(c);
+        });
+        this.showToast(`🗑️ ลบการแจ้งเตือนราคาของ ${symbol} ทั้งหมดแล้ว`);
+    }
+
+    checkPriceAlerts(symbol, currentPrice) {
+        if (!this.priceAlerts || this.priceAlerts.length === 0 || !currentPrice) return;
+        if (!this.lastKnownAlertPrice) this.lastKnownAlertPrice = {};
+        const prevPrice = this.lastKnownAlertPrice[symbol];
+        this.lastKnownAlertPrice[symbol] = currentPrice;
+
+        const matchingAlerts = this.priceAlerts.filter(a => a.symbol === symbol && !a.triggered);
+        if (matchingAlerts.length === 0) return;
+
+        const isGold = symbol.includes('XAU') || symbol.includes('GOLD');
+        const isForex = symbol.includes('EUR') || symbol.includes('GBP') || symbol.includes('JPY') || symbol.includes('AUD');
+        const threshold = isGold ? 0.35 : (isForex ? 0.0003 : (symbol.includes('BTC') ? 15 : 0.5));
+
+        for (const alert of matchingAlerts) {
+            let isTriggered = false;
+            if (prevPrice !== undefined && prevPrice !== null) {
+                if ((prevPrice <= alert.price && currentPrice >= alert.price) ||
+                    (prevPrice >= alert.price && currentPrice <= alert.price)) {
+                    isTriggered = true;
+                }
+            }
+            if (!isTriggered && Math.abs(currentPrice - alert.price) <= threshold) {
+                isTriggered = true;
+            }
+
+            if (isTriggered) {
+                alert.triggered = true;
+                alert.triggeredAt = Date.now();
+                this.savePriceAlerts();
+                this.playAlertSound();
+                this.showPriceAlertBanner(alert, currentPrice);
+                this.charts.forEach(c => {
+                    if (c.symbol === symbol) this.updateOverlays(c);
+                });
+            }
+        }
+    }
+
+    showPriceAlertBanner(alert, currentPrice) {
+        let banner = document.getElementById('price-alert-banner');
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'price-alert-banner';
+            banner.className = 'price-alert-banner';
+            document.body.appendChild(banner);
+        }
+
+        const isGold = alert.symbol.includes('XAU') || alert.symbol.includes('GOLD');
+        const isForex = alert.symbol.includes('EUR') || alert.symbol.includes('GBP') || alert.symbol.includes('JPY') || alert.symbol.includes('AUD');
+        const decimals = isGold ? 3 : (isForex ? 5 : 2);
+
+        banner.innerHTML = `
+            <div class="pab-bell-pulse">🔔</div>
+            <div class="pab-body">
+                <div class="pab-title">ราคาแตะจุดแจ้งเตือน!</div>
+                <div class="pab-detail"><b>${alert.symbol}</b> วิ่งถึงระดับ <b>$${alert.price.toFixed(decimals)}</b> แล้ว (ปัจจุบัน $${currentPrice.toFixed(decimals)})</div>
+            </div>
+            <button type="button" class="pab-close" onclick="window.chartEngine.dismissPriceAlertBanner()" title="ปิดการแจ้งเตือน">✕</button>
+        `;
+
+        banner.style.display = 'flex';
+        banner.classList.add('visible');
+
+        if (this.alertBannerTimeout) clearTimeout(this.alertBannerTimeout);
+        this.alertBannerTimeout = setTimeout(() => {
+            this.dismissPriceAlertBanner();
+        }, 12000);
+    }
+
+    dismissPriceAlertBanner() {
+        const banner = document.getElementById('price-alert-banner');
+        if (banner) {
+            banner.classList.remove('visible');
+            setTimeout(() => { banner.style.display = 'none'; }, 250);
+        }
+    }
+
+    // =========================================================
+    // RISK / REWARD POSITION STATS CALCULATION
+    // =========================================================
+
+    calculatePositionStats(drawing, symbol) {
+        if (!drawing || !drawing.points || drawing.points.length < 3) {
+            return { rr: '0.00', rewardPts: 0, stopPts: 0, lotSize: '0.01', targetPrice: 0, stopPrice: 0, entryPrice: 0 };
+        }
+        const entryPrice = drawing.points[0].price;
+        const targetPrice = drawing.points[1].price;
+        const stopPrice = drawing.points[2].price;
+        const isLong = (drawing.type === 'long_position');
+
+        const reward = isLong ? (targetPrice - entryPrice) : (entryPrice - targetPrice);
+        const risk = isLong ? (entryPrice - stopPrice) : (stopPrice - entryPrice);
+
+        const rr = (risk > 0) ? (reward / risk).toFixed(2) : '0.00';
+
+        const isGold = symbol.includes('XAU') || symbol.includes('GOLD');
+        const isForex = symbol.includes('EUR') || symbol.includes('GBP') || symbol.includes('JPY') || symbol.includes('AUD');
+        const decimals = isGold ? 3 : (isForex ? 5 : 2);
+
+        let rewardPts = 0;
+        let stopPts = 0;
+        let contractSize = 100;
+
+        if (isGold) {
+            rewardPts = Math.round(reward * 10);
+            stopPts = Math.round(risk * 10);
+            contractSize = 100;
+        } else if (isForex) {
+            rewardPts = Math.round(reward * 10000);
+            stopPts = Math.round(risk * 10000);
+            contractSize = 100000;
+        } else if (symbol.includes('BTC')) {
+            rewardPts = Math.round(reward);
+            stopPts = Math.round(risk);
+            contractSize = 1;
+        } else {
+            rewardPts = Number(reward.toFixed(decimals));
+            stopPts = Number(risk.toFixed(decimals));
+            contractSize = 1;
+        }
+
+        const riskDollar = drawing.riskAmount || 100;
+        let lotSize = 0.01;
+        if (risk > 0 && contractSize > 0) {
+            const lossPerLot = risk * contractSize;
+            if (lossPerLot > 0) {
+                lotSize = Math.max(0.01, Number((riskDollar / lossPerLot).toFixed(2)));
+            }
+        }
+
+        return {
+            rr,
+            rewardPts,
+            stopPts,
+            lotSize: lotSize.toFixed(2),
+            entryPrice,
+            targetPrice,
+            stopPrice,
+            rewardPercent: entryPrice > 0 ? ((reward / entryPrice) * 100).toFixed(2) : '0.00',
+            riskPercent: entryPrice > 0 ? ((risk / entryPrice) * 100).toFixed(2) : '0.00'
+        };
+    }
+
+    // =========================================================
+    // INTERACTIVE DRAWING TOOLS ENGINE (v2.6.0)
     // Locked Coordinates { time, price } to prevent drift during Zoom/Pan
     // =========================================================
 
@@ -4450,9 +4742,12 @@ class ChartEngine {
             'horzline': 'เส้นแนวนอน (Horizontal Line)',
             'horzray': 'เรย์แนวนอน (Horizontal Ray)',
             'vertline': 'เส้นแนวตั้ง (Vertical Line)',
-            'rectangle': 'Rectangle (Demand/Supply Zone)',
+            'rectangle': 'กล่องโซน (Demand/Supply)',
             'path': 'เส้นทาง (Path)',
-            'text': 'ข้อความ (Text)'
+            'text': 'ข้อความ (Text)',
+            'long_position': 'Long Position (R:R Ratio)',
+            'short_position': 'Short Position (R:R Ratio)',
+            'price_alert': 'Price Alert (แจ้งเตือนราคา)'
         };
         return names[tool] || tool;
     }
@@ -4466,9 +4761,12 @@ class ChartEngine {
             'horzline': 'เส้นแนวนอน',
             'horzray': 'เรย์แนวนอน',
             'vertline': 'เส้นแนวตั้ง',
-            'rectangle': 'Rectangle',
+            'rectangle': 'กล่องโซน',
             'path': 'เส้นทาง',
-            'text': 'ข้อความ'
+            'text': 'ข้อความ',
+            'long_position': 'Long R:R',
+            'short_position': 'Short R:R',
+            'price_alert': 'แจ้งเตือนราคา'
         };
         if (label) {
             label.innerText = tool ? (shortNames[tool] || tool) : 'วาดอื่นๆ';
@@ -4517,6 +4815,51 @@ class ChartEngine {
         const isForex = cellObj.symbol.includes('EUR') || cellObj.symbol.includes('GBP') || cellObj.symbol.includes('JPY') || cellObj.symbol.includes('AUD');
         const decimals = isGold ? 3 : (isForex ? 5 : 2);
         const safePrice = (typeof coords.price === 'number') ? coords.price : (cellObj.visibleCandles?.[cellObj.visibleCandles.length - 1]?.close || 2000);
+
+        // 0. แจ้งเตือนราคา (Price Alert): คลิกจุดเดียว วางเส้น Alert ณ ระดับราคานั้นทันที
+        if (tool === 'price_alert') {
+            this.addPriceAlert(cellObj.symbol, safePrice);
+            this.setDrawingTool(null);
+            return;
+        }
+
+        // 0.1 Long & Short Position (Risk/Reward Ratio Calculator)
+        if (tool === 'long_position' || tool === 'short_position') {
+            const isLong = (tool === 'long_position');
+            let defaultStopDist = isGold ? 3.0 : (isForex ? 0.0030 : (cellObj.symbol.includes('BTC') ? 500 : (safePrice * 0.01)));
+            let defaultTargetDist = defaultStopDist * 2.0; // 2R default
+
+            let targetPrice = isLong ? (safePrice + defaultTargetDist) : (safePrice - defaultTargetDist);
+            let stopPrice = isLong ? (safePrice - defaultStopDist) : (safePrice + defaultStopDist);
+
+            targetPrice = Number(targetPrice.toFixed(decimals));
+            stopPrice = Number(stopPrice.toFixed(decimals));
+
+            const tfMinutes = this.parseTimeframeToMinutes(cellObj.timeframe);
+            const tfSec = tfMinutes * 60;
+            const endTime = (coords.time || Math.floor(Date.now() / 1000)) + (22 * tfSec);
+
+            const drawing = {
+                id: 'draw_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+                type: tool,
+                points: [
+                    { time: coords.time, price: safePrice },       // 0: Entry
+                    { time: endTime, price: targetPrice },        // 1: Target (TP)
+                    { time: endTime, price: stopPrice }           // 2: Stop Loss (SL)
+                ],
+                riskAmount: 100,
+                selected: true
+            };
+
+            cellObj.drawings.push(drawing);
+            cellObj.selectedDrawingId = drawing.id;
+            this.saveDrawings(cellObj.symbol, cellObj.drawings);
+            this.setDrawingTool(null);
+            this.updateOverlays(cellObj);
+            this.showDrawingActionBar(cellObj, drawing);
+            this.showToast(`✓ วางกล่อง ${isLong ? 'Long (Buy)' : 'Short (Sell)'} R:R เรียบร้อย`);
+            return;
+        }
 
         // 1. เส้นแนวนอน (Horizontal Line): คลิกจุดเดียว วาดเส้นตลอดความกว้าง
         if (tool === 'horzline') {
@@ -4613,10 +4956,13 @@ class ChartEngine {
                 cellObj.currentDrawing = {
                     id: 'draw_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
                     type: 'rectangle',
+                    zoneType: 'demand',
+                    extendRight: false,
+                    label: 'Demand Zone',
                     points: [{ time: coords.time, price: coords.price }, { time: coords.time, price: coords.price }],
                     startX: coords.x,
                     startY: coords.y,
-                    color: '#38bdf8',
+                    color: '#10b981',
                     phase: 'drawing'
                 };
                 this.updateOverlays(cellObj);
@@ -4625,12 +4971,16 @@ class ChartEngine {
                 delete cellObj.currentDrawing.phase;
                 delete cellObj.currentDrawing.startX;
                 delete cellObj.currentDrawing.startY;
+                cellObj.currentDrawing.selected = true;
+                cellObj.selectedDrawingId = cellObj.currentDrawing.id;
                 cellObj.drawings.push(cellObj.currentDrawing);
                 this.saveDrawings(cellObj.symbol, cellObj.drawings);
+                const finishedDrawing = cellObj.currentDrawing;
                 cellObj.currentDrawing = null;
                 this.setDrawingTool(null);
                 this.updateOverlays(cellObj);
-                this.showToast('✓ วาด Rectangle Zone เรียบร้อย');
+                this.showDrawingActionBar(cellObj, finishedDrawing);
+                this.showToast('✓ วาดกล่องโซน Demand/Supply เรียบร้อย');
             }
             return;
         }
@@ -5044,6 +5394,52 @@ class ChartEngine {
                     <span>✓</span>
                 </button>
             `;
+        } else if (drawing.type === 'rectangle') {
+            const zone = drawing.zoneType || 'demand';
+            const isExtended = !!drawing.extendRight;
+            bar.innerHTML = `
+                <button type="button" class="dab-btn ${zone === 'demand' ? 'dab-active' : ''}" style="${zone === 'demand' ? 'color:#10b981;font-weight:bold;' : ''}" onclick="window.chartEngine.setRectangleZoneType(${cellIndex}, '${drawingId}', 'demand')" title="โซน Demand (เขียว)">
+                    <span>🟢 Demand</span>
+                </button>
+                <button type="button" class="dab-btn ${zone === 'supply' ? 'dab-active' : ''}" style="${zone === 'supply' ? 'color:#ef4444;font-weight:bold;' : ''}" onclick="window.chartEngine.setRectangleZoneType(${cellIndex}, '${drawingId}', 'supply')" title="โซน Supply (แดง)">
+                    <span>🔴 Supply</span>
+                </button>
+                <button type="button" class="dab-btn ${zone === 'neutral' ? 'dab-active' : ''}" style="${zone === 'neutral' ? 'color:#3b82f6;font-weight:bold;' : ''}" onclick="window.chartEngine.setRectangleZoneType(${cellIndex}, '${drawingId}', 'neutral')" title="Order Block (น้ำเงิน)">
+                    <span>🔵 OB</span>
+                </button>
+                <div class="dab-sep"></div>
+                <button type="button" class="dab-btn ${isExtended ? 'dab-active' : ''}" onclick="window.chartEngine.toggleRectangleExtendRight(${cellIndex}, '${drawingId}')" title="${isExtended ? 'ปิดการยืดเส้นไปขวาสุด' : 'ยืดกล่องไปขวาสุดหน้าจออัตโนมัติ'}">
+                    <span>${isExtended ? '⇤ หดขวา' : '⇥ ขยายขวา'}</span>
+                </button>
+                <button type="button" class="dab-btn" onclick="window.chartEngine.promptRectangleLabel(${cellIndex}, '${drawingId}')" title="เปลี่ยนชื่อป้ายโซน">
+                    <span>🏷️ ป้าย</span>
+                </button>
+                <div class="dab-sep"></div>
+                <button type="button" class="dab-btn dab-danger" onclick="window.chartEngine.deleteDrawingById(${cellIndex}, '${drawingId}')" title="ลบกล่องนี้ (✕)">
+                    <span>✕ ลบ</span>
+                </button>
+                <button type="button" class="dab-btn" onclick="window.chartEngine.deselectAllDrawings()" title="ยกเลิกการเลือก" style="padding: 3px 6px;">
+                    <span>✓</span>
+                </button>
+            `;
+        } else if (drawing.type === 'long_position' || drawing.type === 'short_position') {
+            const stats = this.calculatePositionStats(drawing, cell.symbol);
+            const isLong = (drawing.type === 'long_position');
+            bar.innerHTML = `
+                <span class="dab-label" style="color: ${isLong ? '#10b981' : '#ef4444'}; font-weight: bold;">${isLong ? '▲ LONG' : '▼ SHORT'} R:R 1:${stats.rr}</span>
+                <div class="dab-sep"></div>
+                <button type="button" class="dab-btn" onclick="window.chartEngine.cyclePositionRisk(${cellIndex}, '${drawingId}')" title="คลิกเพื่อเปลี่ยนเงินทุนเสี่ยง ($50, $100, $200, $500, $1000)">
+                    <span>💰 เสี่ยง: $${drawing.riskAmount || 100}</span>
+                </button>
+                <span class="dab-label" style="color: #38bdf8; font-size: 11px;">Lot: ${stats.lotSize}L</span>
+                <div class="dab-sep"></div>
+                <button type="button" class="dab-btn dab-danger" onclick="window.chartEngine.deleteDrawingById(${cellIndex}, '${drawingId}')" title="ลบกล่อง Position นี้ (✕)">
+                    <span>✕ ลบ</span>
+                </button>
+                <button type="button" class="dab-btn" onclick="window.chartEngine.deselectAllDrawings()" title="ยกเลิกการเลือก" style="padding: 3px 6px;">
+                    <span>✓</span>
+                </button>
+            `;
         } else {
             bar.innerHTML = `
                 <span class="dab-label">${this.getToolDisplayName(drawing.type)}</span>
@@ -5059,6 +5455,101 @@ class ChartEngine {
 
         bar.classList.add('visible');
         this.updateDrawingActionBarPosition(cell, drawing);
+    }
+
+    setRectangleZoneType(cellIndex, drawingId, zoneType) {
+        const idx = cellIndex !== undefined ? cellIndex : this.activeChartIndex;
+        const cell = this.charts[idx];
+        if (!cell) return;
+        const d = (cell.drawings || []).find(item => item.id === drawingId);
+        if (!d || d.type !== 'rectangle') return;
+        d.zoneType = zoneType;
+        if (zoneType === 'demand') {
+            d.color = '#10b981';
+            d.label = 'Demand Zone';
+        } else if (zoneType === 'supply') {
+            d.color = '#ef4444';
+            d.label = 'Supply Zone';
+        } else {
+            d.color = '#3b82f6';
+            d.label = 'Order Block';
+        }
+        this.saveDrawings(cell.symbol, cell.drawings);
+        this.updateOverlays(cell);
+        this.showDrawingActionBar(cell, d);
+        this.showToast(`✓ เปลี่ยนกล่องเป็น ${d.label}`);
+    }
+
+    toggleRectangleExtendRight(cellIndex, drawingId) {
+        const idx = cellIndex !== undefined ? cellIndex : this.activeChartIndex;
+        const cell = this.charts[idx];
+        if (!cell) return;
+        const d = (cell.drawings || []).find(item => item.id === drawingId);
+        if (!d || d.type !== 'rectangle') return;
+        d.extendRight = !d.extendRight;
+        this.saveDrawings(cell.symbol, cell.drawings);
+        this.updateOverlays(cell);
+        this.showDrawingActionBar(cell, d);
+        this.showToast(d.extendRight ? '✓ ขยายโซนไปขวาสุด (Extend Right ON)' : '✓ ปิดการขยายขวา');
+    }
+
+    promptRectangleLabel(cellIndex, drawingId) {
+        const idx = cellIndex !== undefined ? cellIndex : this.activeChartIndex;
+        const cell = this.charts[idx];
+        if (!cell) return;
+        const d = (cell.drawings || []).find(item => item.id === drawingId);
+        if (!d || d.type !== 'rectangle') return;
+        const curLabel = d.label || (d.zoneType === 'supply' ? 'Supply Zone' : (d.zoneType === 'demand' ? 'Demand Zone' : 'Order Block'));
+        const newLabel = prompt('ระบุป้ายชื่อโซน (เช่น Supply H4, Demand M15, OB Unmitigated):', curLabel);
+        if (newLabel !== null) {
+            d.label = newLabel.trim();
+            this.saveDrawings(cell.symbol, cell.drawings);
+            this.updateOverlays(cell);
+            this.showDrawingActionBar(cell, d);
+            this.showToast(`✓ ปรับป้ายชื่อเป็น "${d.label}"`);
+        }
+    }
+
+    cyclePositionRisk(cellIndex, drawingId) {
+        const idx = cellIndex !== undefined ? cellIndex : this.activeChartIndex;
+        const cell = this.charts[idx];
+        if (!cell) return;
+        const d = (cell.drawings || []).find(item => item.id === drawingId);
+        if (!d || (d.type !== 'long_position' && d.type !== 'short_position')) return;
+        const risks = [50, 100, 200, 500, 1000];
+        const curRisk = d.riskAmount || 100;
+        const nextIdx = (risks.indexOf(curRisk) + 1) % risks.length;
+        d.riskAmount = risks[nextIdx];
+        this.saveDrawings(cell.symbol, cell.drawings);
+        this.updateOverlays(cell);
+        this.showDrawingActionBar(cell, d);
+        this.showToast(`💰 เปลี่ยนความเสี่ยงเป็น $${d.riskAmount} USD`);
+    }
+
+    getAlertHitTest(cellObj, px, py) {
+        if (!cellObj || !cellObj.candleSeries) return null;
+        const alerts = this.priceAlerts[cellObj.symbol] || [];
+        if (alerts.length === 0) return null;
+
+        const canvasW = (cellObj.vpCanvas && cellObj.vpCanvas.width) || (cellObj.container ? cellObj.container.clientWidth : 800);
+
+        for (let i = alerts.length - 1; i >= 0; i--) {
+            const alert = alerts[i];
+            const y = cellObj.candleSeries.priceToCoordinate(alert.price);
+            if (y === null) continue;
+
+            const isGold = cellObj.symbol.includes('XAU') || cellObj.symbol.includes('GOLD');
+            const isForex = cellObj.symbol.includes('EUR') || cellObj.symbol.includes('GBP') || cellObj.symbol.includes('JPY') || cellObj.symbol.includes('AUD');
+            const decimals = isGold ? 3 : (isForex ? 5 : 2);
+            const alertStr = `🔔 $${alert.price.toFixed(decimals)}  ✕`;
+            const approxBadgeW = alertStr.length * 7 + 16;
+            const badgeX = canvasW - approxBadgeW - 8;
+
+            if (px >= badgeX - 6 && px <= canvasW && Math.abs(py - y) <= 12) {
+                return { action: 'delete', alertId: alert.id, alert };
+            }
+        }
+        return null;
     }
 
     hideDrawingActionBar() {
@@ -5140,9 +5631,17 @@ class ChartEngine {
         if (d.type === 'rectangle' && d.points.length >= 2) {
             const p1 = toScreen(d.points[0]);
             const p2 = toScreen(d.points[1]);
-            const maxX = Math.max(p1.x, p2.x);
+            const maxX = d.extendRight ? canvasW - 20 : Math.max(p1.x, p2.x);
             const minY = Math.min(p1.y, p2.y);
             return { x: maxX + 10, y: minY - 10, r: 9 };
+        }
+        if ((d.type === 'long_position' || d.type === 'short_position') && d.points.length >= 3) {
+            const p0 = toScreen(d.points[0]);
+            const p1 = toScreen(d.points[1]);
+            const p2 = toScreen(d.points[2]);
+            const rightX = Math.max(p0.x, p1.x);
+            const topY = Math.min(p0.y, p1.y, p2.y);
+            return { x: rightX + 12, y: topY - 10, r: 9 };
         }
         if (d.type === 'path' && d.points.length >= 2) {
             const lastPt = d.points[d.points.length - 1];
@@ -5266,9 +5765,19 @@ class ChartEngine {
                 const p1 = toScreen(d.points[0]);
                 const p2 = toScreen(d.points[1]);
                 const minX = Math.min(p1.x, p2.x) - 8;
-                const maxX = Math.max(p1.x, p2.x) + 8;
+                let maxX = Math.max(p1.x, p2.x) + 8;
+                if (d.extendRight) maxX = canvasW;
                 const minY = Math.min(p1.y, p2.y) - 8;
                 const maxY = Math.max(p1.y, p2.y) + 8;
+                if (px >= minX && px <= maxX && py >= minY && py <= maxY) return d;
+            } else if ((d.type === 'long_position' || d.type === 'short_position') && d.points.length >= 3) {
+                const p0 = toScreen(d.points[0]);
+                const p1 = toScreen(d.points[1]);
+                const p2 = toScreen(d.points[2]);
+                const minX = Math.min(p0.x, p1.x) - 8;
+                const maxX = Math.max(p0.x, p1.x) + 8;
+                const minY = Math.min(p0.y, p1.y, p2.y) - 8;
+                const maxY = Math.max(p0.y, p1.y, p2.y) + 8;
                 if (px >= minX && px <= maxX && py >= minY && py <= maxY) return d;
             } else if (d.type === 'path' && d.points.length >= 2) {
                 for (let j = 0; j < d.points.length - 1; j++) {
@@ -5367,6 +5876,45 @@ class ChartEngine {
         const isGold = cell.symbol.includes('XAU') || cell.symbol.includes('GOLD');
         const isForex = cell.symbol.includes('EUR') || cell.symbol.includes('GBP') || cell.symbol.includes('JPY') || cell.symbol.includes('AUD');
         const decimals = isGold ? 3 : (isForex ? 5 : 2);
+
+        // 0. วาดเส้นแจ้งเตือนราคา (Price Alerts)
+        const alerts = this.priceAlerts[cell.symbol] || [];
+        if (alerts.length > 0) {
+            alerts.forEach(alert => {
+                let y = cell.candleSeries ? cell.candleSeries.priceToCoordinate(alert.price) : null;
+                if (y === null) return;
+                ctx.save();
+                ctx.strokeStyle = '#f59e0b';
+                ctx.lineWidth = 1.6;
+                ctx.setLineDash([6, 4]);
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvasW, y);
+                ctx.stroke();
+
+                ctx.setLineDash([]);
+                const alertStr = `🔔 $${alert.price.toFixed(decimals)}  ✕`;
+                ctx.font = 'bold 10px monospace';
+                const metrics = ctx.measureText(alertStr);
+                const badgeW = metrics.width + 12;
+                const badgeH = 18;
+                const badgeX = canvasW - badgeW - 8;
+                const badgeY = y - badgeH / 2;
+
+                ctx.fillStyle = 'rgba(245, 158, 11, 0.95)';
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1;
+                this.drawSafeRoundedRect(ctx, badgeX, badgeY, badgeW, badgeH, 4);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = '#0f172a';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(alertStr, badgeX + 6, y);
+                ctx.restore();
+            });
+        }
 
         const allDrawings = [...(cell.drawings || [])];
         if (cell.currentDrawing) {
@@ -5532,34 +6080,194 @@ class ChartEngine {
                 ctx.fillText(timeStr, p1.x, badgeY + badgeH / 2);
             }
 
-            // 5. Rectangle (Demand/Supply Zone)
+            // 5. Rectangle (Demand/Supply / Order Block Zone)
             else if (d.type === 'rectangle' && d.points.length >= 2) {
                 const p1 = toScreen(d.points[0]);
                 const p2 = toScreen(d.points[1]);
 
                 const minX = Math.min(p1.x, p2.x);
-                const maxX = Math.max(p1.x, p2.x);
+                let maxX = Math.max(p1.x, p2.x);
+                if (d.extendRight) maxX = canvasW;
                 const minY = Math.min(p1.y, p2.y);
                 const maxY = Math.max(p1.y, p2.y);
                 const w = Math.max(3, maxX - minX);
                 const h = Math.max(3, maxY - minY);
 
-                ctx.fillStyle = isSelected ? 'rgba(168, 85, 247, 0.18)' : 'rgba(56, 189, 248, 0.14)';
+                const zType = d.zoneType || 'demand';
+                let fillColor = 'rgba(16, 185, 129, 0.16)';
+                let strokeColor = '#10b981';
+                let defaultLabel = 'Demand Zone';
+
+                if (zType === 'supply') {
+                    fillColor = 'rgba(239, 68, 68, 0.16)';
+                    strokeColor = '#ef4444';
+                    defaultLabel = 'Supply Zone';
+                } else if (zType === 'neutral') {
+                    fillColor = 'rgba(59, 130, 246, 0.16)';
+                    strokeColor = '#3b82f6';
+                    defaultLabel = 'Order Block';
+                }
+
+                if (isSelected) {
+                    strokeColor = '#a855f7';
+                    fillColor = 'rgba(168, 85, 247, 0.2)';
+                }
+
+                ctx.fillStyle = fillColor;
                 ctx.fillRect(minX, minY, w, h);
 
-                ctx.strokeStyle = isSelected ? '#a855f7' : color;
+                ctx.strokeStyle = strokeColor;
                 ctx.lineWidth = isSelected ? 2 : 1.5;
                 if (isPreview) ctx.setLineDash([4, 4]);
                 ctx.strokeRect(minX, minY, w, h);
 
                 ctx.setLineDash([]);
-                ctx.fillStyle = isSelected ? '#a855f7' : color;
+                ctx.fillStyle = strokeColor;
                 const corners = [{ x: minX, y: minY }, { x: maxX, y: minY }, { x: minX, y: maxY }, { x: maxX, y: maxY }];
                 corners.forEach(c => {
                     ctx.beginPath();
                     ctx.arc(c.x, c.y, 3.5, 0, Math.PI * 2);
                     ctx.fill();
                 });
+
+                // Zone Label Badge (ป้ายชื่อโซน)
+                const zoneLabel = d.label || defaultLabel;
+                if (zoneLabel) {
+                    ctx.font = 'bold 9.5px -apple-system, BlinkMacSystemFont, sans-serif';
+                    const lm = ctx.measureText(zoneLabel);
+                    const tagW = lm.width + 10;
+                    const tagH = 16;
+                    const tagX = minX + 6;
+                    const tagY = minY + 5;
+
+                    ctx.fillStyle = isSelected ? 'rgba(168, 85, 247, 0.9)' : strokeColor;
+                    this.drawSafeRoundedRect(ctx, tagX, tagY, tagW, tagH, 3);
+                    ctx.fill();
+
+                    ctx.fillStyle = '#ffffff';
+                    ctx.textAlign = 'left';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(zoneLabel, tagX + 5, tagY + tagH / 2);
+                }
+            }
+
+            // 5.1 Long & Short Position (Risk/Reward Ratio Calculator)
+            else if ((d.type === 'long_position' || d.type === 'short_position') && d.points.length >= 3) {
+                const isLong = (d.type === 'long_position');
+                const p0 = toScreen(d.points[0]); // Entry
+                const p1 = toScreen(d.points[1]); // Target
+                const p2 = toScreen(d.points[2]); // Stop Loss
+
+                const startX = Math.min(p0.x, p1.x);
+                const endX = Math.max(p0.x, p1.x);
+                const width = Math.max(30, endX - startX);
+
+                const entryY = p0.y;
+                const targetY = p1.y;
+                const stopY = p2.y;
+
+                const profTop = Math.min(entryY, targetY);
+                const profH = Math.max(2, Math.abs(entryY - targetY));
+
+                const lossTop = Math.min(entryY, stopY);
+                const lossH = Math.max(2, Math.abs(entryY - stopY));
+
+                // 1. Profit Box (เขียวโปร่งใส)
+                ctx.fillStyle = isSelected ? 'rgba(16, 185, 129, 0.25)' : 'rgba(16, 185, 129, 0.16)';
+                ctx.fillRect(startX, profTop, width, profH);
+                ctx.strokeStyle = isSelected ? '#a855f7' : '#10b981';
+                ctx.lineWidth = isSelected ? 2 : 1.5;
+                ctx.strokeRect(startX, profTop, width, profH);
+
+                // 2. Loss Box (แดงโปร่งใส)
+                ctx.fillStyle = isSelected ? 'rgba(239, 68, 68, 0.25)' : 'rgba(239, 68, 68, 0.16)';
+                ctx.fillRect(startX, lossTop, width, lossH);
+                ctx.strokeStyle = isSelected ? '#a855f7' : '#ef4444';
+                ctx.lineWidth = isSelected ? 2 : 1.5;
+                ctx.strokeRect(startX, lossTop, width, lossH);
+
+                // 3. เส้นระดับ Entry
+                ctx.strokeStyle = '#38bdf8';
+                ctx.lineWidth = 1.8;
+                ctx.beginPath();
+                ctx.moveTo(startX, entryY);
+                ctx.lineTo(startX + width, entryY);
+                ctx.stroke();
+
+                // Vertex Anchors
+                ctx.fillStyle = '#38bdf8';
+                ctx.beginPath();
+                ctx.arc(startX, entryY, 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#10b981';
+                ctx.beginPath();
+                ctx.arc(startX + width, targetY, 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#ef4444';
+                ctx.beginPath();
+                ctx.arc(startX + width, stopY, 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 4. คำนวณ Stats (R:R, Pips, Lot Size)
+                const stats = this.calculatePositionStats(d, cell.symbol);
+                const targetPrice = d.points[1].price;
+                const stopPrice = d.points[2].price;
+
+                // 5. HUD Card ตรงกลางแสดง R:R Ratio, Lot Size, และ Points
+                const hudW = Math.min(Math.max(width - 8, 140), 220);
+                const hudH = 58;
+                let hudX = startX + (width - hudW) / 2;
+                let hudY = entryY - hudH / 2;
+
+                if (hudX < 10) hudX = 10;
+                if (hudX + hudW > canvasW - 10) hudX = canvasW - hudW - 10;
+                if (hudY < 10) hudY = 10;
+                if (hudY + hudH > canvasH - 10) hudY = canvasH - hudH - 10;
+
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+                ctx.strokeStyle = isSelected ? '#a855f7' : (isLong ? 'rgba(16, 185, 129, 0.7)' : 'rgba(239, 68, 68, 0.7)');
+                ctx.lineWidth = 1.2;
+                this.drawSafeRoundedRect(ctx, hudX, hudY, hudW, hudH, 6);
+                ctx.fill();
+                ctx.stroke();
+
+                // HUD Line 1: Type & R:R Ratio
+                ctx.font = 'bold 11px sans-serif';
+                ctx.fillStyle = isLong ? '#10b981' : '#ef4444';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(`${isLong ? '▲ LONG' : '▼ SHORT'} | R:R 1 : ${stats.rr}`, hudX + 8, hudY + 14);
+
+                // HUD Line 2: Target & Stop Points
+                ctx.font = '10px monospace';
+                ctx.fillStyle = '#e2e8f0';
+                ctx.fillText(`TP: +${stats.rewardPts} pts  SL: -${stats.stopPts} pts`, hudX + 8, hudY + 30);
+
+                // HUD Line 3: Risk Dollar & Recommended Lot Size
+                ctx.font = 'bold 10px monospace';
+                ctx.fillStyle = '#38bdf8';
+                ctx.fillText(`เสี่ยง: $${d.riskAmount || 100} -> แนะนำ: ${stats.lotSize} Lot`, hudX + 8, hudY + 45);
+
+                // ป้ายราคาริมขวากล่อง
+                const priceBadgeW = 68;
+                const priceBadgeH = 16;
+                // Target Price Tag
+                ctx.fillStyle = 'rgba(16, 185, 129, 0.9)';
+                this.drawSafeRoundedRect(ctx, startX + width - priceBadgeW, targetY - priceBadgeH / 2, priceBadgeW, priceBadgeH, 3);
+                ctx.fill();
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 9px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(`$${targetPrice.toFixed(decimals)}`, startX + width - priceBadgeW / 2, targetY);
+
+                // Stop Price Tag
+                ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
+                this.drawSafeRoundedRect(ctx, startX + width - priceBadgeW, stopY - priceBadgeH / 2, priceBadgeW, priceBadgeH, 3);
+                ctx.fill();
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText(`$${stopPrice.toFixed(decimals)}`, startX + width - priceBadgeW / 2, stopY);
             }
 
             // 6. เส้นทาง (Path / Polyline Arrow)

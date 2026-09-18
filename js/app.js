@@ -5,7 +5,7 @@
 
 document.addEventListener('DOMContentLoaded', async () => {
     // 0. Application Version Control & Forced Auto-Migration
-    const APP_VERSION = '2.6.0';
+    const APP_VERSION = '2.6.1';
     window.APP_VERSION = APP_VERSION;
     const prevVersion = localStorage.getItem('tt_app_version');
     if (prevVersion && prevVersion !== APP_VERSION) {
@@ -429,7 +429,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 'vertline': '╽ แนวตั้ง',
                 'rectangle': '🟩 กล่องโซน',
                 'path': '🔀 เส้นทาง',
-                'text': '📝 ข้อความ'
+                'text': '📝 ข้อความ',
+                'long_position': '🎯 Long R:R',
+                'short_position': '🎯 Short R:R',
+                'price_alert': '🔔 Alert'
             };
 
             let isActive = false;

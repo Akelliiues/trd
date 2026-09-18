@@ -710,6 +710,65 @@
                         </div>
                     </div>
 
+                    <!-- Section 4: วางแผนการเทรด & แจ้งเตือน (Plan & Alerts) -->
+                    <div class="tools-palette-section">
+                        <div class="tools-section-title">🎯 วางแผนการเทรด & แจ้งเตือน (Plan & Alerts)</div>
+                        <div class="tools-section-grid">
+                            <!-- Long Position -->
+                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-long-pos"
+                                data-tool="long_position" onclick="window.app.selectToolFromPalette('long_position')">
+                                <div class="tool-card-icon" style="color: #10b981; background: rgba(16, 185, 129, 0.12);">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="18 15 12 9 6 15" />
+                                        <rect x="4" y="3" width="16" height="6" rx="1" fill="rgba(16, 185, 129, 0.2)" />
+                                        <rect x="4" y="15" width="16" height="6" rx="1" fill="rgba(239, 68, 68, 0.2)" />
+                                    </svg>
+                                </div>
+                                <div class="tool-card-info">
+                                    <div class="tool-card-name-row">
+                                        <span class="tool-card-name">Long Position (Buy R:R)</span>
+                                    </div>
+                                    <div class="tool-card-desc">คำนวณ Risk/Reward อัตโนมัติ & แนะนำ Lot Size</div>
+                                </div>
+                            </button>
+
+                            <!-- Short Position -->
+                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-short-pos"
+                                data-tool="short_position" onclick="window.app.selectToolFromPalette('short_position')">
+                                <div class="tool-card-icon" style="color: #ef4444; background: rgba(239, 68, 68, 0.12);">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="6 9 12 15 18 9" />
+                                        <rect x="4" y="3" width="16" height="6" rx="1" fill="rgba(239, 68, 68, 0.2)" />
+                                        <rect x="4" y="15" width="16" height="6" rx="1" fill="rgba(16, 185, 129, 0.2)" />
+                                    </svg>
+                                </div>
+                                <div class="tool-card-info">
+                                    <div class="tool-card-name-row">
+                                        <span class="tool-card-name">Short Position (Sell R:R)</span>
+                                    </div>
+                                    <div class="tool-card-desc">คำนวณเป้า TP/SL อัตราผลตอบแทนต่อความเสี่ยง</div>
+                                </div>
+                            </button>
+
+                            <!-- Price Alert -->
+                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-price-alert"
+                                data-tool="price_alert" onclick="window.app.selectToolFromPalette('price_alert')">
+                                <div class="tool-card-icon" style="color: #f59e0b; background: rgba(245, 158, 11, 0.12);">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                                        <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                                    </svg>
+                                </div>
+                                <div class="tool-card-info">
+                                    <div class="tool-card-name-row">
+                                        <span class="tool-card-name">Price Alert (แจ้งเตือนราคา)</span>
+                                    </div>
+                                    <div class="tool-card-desc">คลิกเพื่อวางเส้นเตือนราคา พร้อมเสียง Chime</div>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
                     <div class="tools-palette-footer draw-menu-footer">
                         <span>💡 กด <b>Esc</b> ยกเลิกเครื่องมือ | คลิกที่เส้นแล้วกด <b>Delete</b> เพื่อลบ</span>
                     </div>
@@ -2241,17 +2300,27 @@
             </button>
         </div>
 
-        <!-- Scripts (Cache-Busted v2.6.0) -->
-        <script src="js/resampler.js?v=2.6.0"></script>
-        <script src="js/indicators.js?v=2.6.0"></script>
-        <script src="js/volume-profile.js?v=2.6.0"></script>
-        <script src="js/footprint.js?v=2.6.0"></script>
-        <script src="js/patterns.js?v=2.6.0"></script>
-        <script src="js/watchlist.js?v=2.6.0"></script>
-        <script src="js/journal.js?v=2.6.0"></script>
-        <script src="js/chart-engine.js?v=2.6.0"></script>
-        <script src="js/replay-engine.js?v=2.6.0"></script>
-        <script src="js/app.js?v=2.6.0"></script>
+        <!-- Price Alert Notification Banner (Floating Top HUD) -->
+        <div id="price-alert-banner" class="price-alert-banner" style="display: none;">
+            <div class="pab-icon">🔔</div>
+            <div class="pab-content">
+                <div class="pab-title" id="pab-title">การแจ้งเตือนราคา!</div>
+                <div class="pab-msg" id="pab-msg">ราคาเคลื่อนที่ทะลุระดับที่ตั้งไว้</div>
+            </div>
+            <button type="button" class="pab-dismiss" onclick="window.chartEngine && window.chartEngine.dismissPriceAlertBanner()" title="ปิดการแจ้งเตือน">✕</button>
+        </div>
+
+        <!-- Scripts (Cache-Busted v2.6.1) -->
+        <script src="js/resampler.js?v=2.6.1"></script>
+        <script src="js/indicators.js?v=2.6.1"></script>
+        <script src="js/volume-profile.js?v=2.6.1"></script>
+        <script src="js/footprint.js?v=2.6.1"></script>
+        <script src="js/patterns.js?v=2.6.1"></script>
+        <script src="js/watchlist.js?v=2.6.1"></script>
+        <script src="js/journal.js?v=2.6.1"></script>
+        <script src="js/chart-engine.js?v=2.6.1"></script>
+        <script src="js/replay-engine.js?v=2.6.1"></script>
+        <script src="js/app.js?v=2.6.1"></script>
 </body>
 
 </html>
