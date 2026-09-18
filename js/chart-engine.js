@@ -1587,37 +1587,8 @@ class ChartEngine {
             changePercentStr = `${sign}${chg.toFixed(2)}%`;
         }
 
-        // 1. Browser Tab Title (document.title) สไตล์ TradingView เช่น "XAUUSD ▲ 4,364.75 +0.15% — TradingTools"
+        // Browser Tab Title (document.title) สไตล์ TradingView
         document.title = `${sym} ${arrow} ${formattedPrice}${changePercentStr ? ' ' + changePercentStr : ''} — TradingTools`;
-
-        // 2. Application Topbar Titlebar Ticker
-        let tickerEl = document.getElementById('topbar-active-ticker');
-        if (!tickerEl) {
-            const topbarLeft = document.querySelector('.topbar-left');
-            if (topbarLeft) {
-                tickerEl = document.createElement('div');
-                tickerEl.id = 'topbar-active-ticker';
-                tickerEl.className = 'topbar-active-ticker';
-                const sep = topbarLeft.querySelector('.topbar-sep');
-                if (sep) {
-                    topbarLeft.insertBefore(tickerEl, sep.nextSibling);
-                } else {
-                    topbarLeft.appendChild(tickerEl);
-                }
-            }
-        }
-
-        if (tickerEl) {
-            tickerEl.innerHTML = `
-                <span class="tat-symbol">${sym}</span>
-                <span class="tat-arrow ${dir}">${arrow}</span>
-                <span class="tat-price ${dir}">${formattedPrice}</span>
-                ${changePercentStr ? `<span class="tat-change ${dir}">${changePercentStr}</span>` : ''}
-            `;
-            tickerEl.classList.remove('flash-up', 'flash-down');
-            void tickerEl.offsetWidth; // force DOM reflow
-            tickerEl.classList.add(dir === 'up' ? 'flash-up' : 'flash-down');
-        }
     }
 
     /**
