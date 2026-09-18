@@ -1507,15 +1507,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             const periodGroup = document.getElementById('ind-period-params-group');
             const psarGroup = document.getElementById('ind-psar-params-group');
             const styleSelect = document.getElementById('ind-style-select');
+            const styleContainer = document.getElementById('ind-style-container');
+            const widthLabel = document.getElementById('ind-width-label');
 
             if (type === 'PSAR') {
                 if (periodGroup) periodGroup.style.display = 'none';
                 if (psarGroup) psarGroup.style.display = 'block';
+                if (styleContainer) styleContainer.style.display = 'none';
+                if (widthLabel) widthLabel.textContent = 'ขนาดจุด (Dot Size):';
                 this.setIndColor('#22c55e');
-                if (styleSelect) styleSelect.value = 'dotted';
             } else {
                 if (periodGroup) periodGroup.style.display = 'block';
                 if (psarGroup) psarGroup.style.display = 'none';
+                if (styleContainer) styleContainer.style.display = 'block';
+                if (widthLabel) widthLabel.textContent = 'ขนาดเส้น (Line Width):';
 
                 const periodInput = document.getElementById('ind-period-input');
                 if (type === 'SMA') {
@@ -1612,10 +1617,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const periodGroup = document.getElementById('submodal-period-group');
             const psarGroup = document.getElementById('submodal-psar-group');
+            const styleContainer = document.getElementById('submodal-style-container');
+            const widthLabel = document.getElementById('submodal-width-label');
 
             if (isPSAR) {
                 if (periodGroup) periodGroup.style.display = 'none';
                 if (psarGroup) psarGroup.style.display = 'block';
+                if (styleContainer) styleContainer.style.display = 'none';
+                if (widthLabel) widthLabel.textContent = 'ขนาดจุด (Dot Size):';
                 const stepInput = document.getElementById('submodal-psar-step');
                 const maxInput = document.getElementById('submodal-psar-max');
                 if (stepInput) stepInput.value = ind.step || 0.02;
@@ -1623,6 +1632,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             } else {
                 if (periodGroup) periodGroup.style.display = 'block';
                 if (psarGroup) psarGroup.style.display = 'none';
+                if (styleContainer) styleContainer.style.display = 'block';
+                if (widthLabel) widthLabel.textContent = 'ขนาดเส้น (Line Width):';
                 const periodInput = document.getElementById('submodal-period-input');
                 if (periodInput) periodInput.value = ind.period || 14;
             }

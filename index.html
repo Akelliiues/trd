@@ -1246,7 +1246,7 @@
                             <!-- Line Width & Line Style -->
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
                                 <div>
-                                    <span
+                                    <span id="ind-width-label"
                                         style="font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 3px;">ขนาดเส้น
                                         (Line Width):</span>
                                     <input type="hidden" id="ind-width-input" value="1">
@@ -1262,7 +1262,7 @@
                                     </div>
                                 </div>
 
-                                <div>
+                                <div id="ind-style-container">
                                     <span
                                         style="font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 3px;">รูปแบบเส้น
                                         (Line Style):</span>
@@ -1408,7 +1408,7 @@
                 <!-- Line Width & Style -->
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;">
                     <div>
-                        <label
+                        <label id="submodal-width-label"
                             style="font-size: 10.5px; margin-bottom: 3px; display: block; color: var(--text-muted);">ขนาดเส้น
                             (Width):</label>
                         <input type="hidden" id="submodal-width-input" value="1">
@@ -1421,7 +1421,7 @@
                                 onclick="window.app.setSubModalWidth(3)">3px</button>
                         </div>
                     </div>
-                    <div>
+                    <div id="submodal-style-container">
                         <label
                             style="font-size: 10.5px; margin-bottom: 3px; display: block; color: var(--text-muted);">รูปแบบเส้น
                             (Style):</label>

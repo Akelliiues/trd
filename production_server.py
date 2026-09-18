@@ -61,6 +61,38 @@ def broadcast_sse(event_type, data):
         for d in dead:
             SSE_CLIENTS.discard(d)
 
+def merge_and_persist_candles(sym, new_candles, max_len=120000, save_to_disk=True):
+    """Merge historical and fresh candles without dropping past history for backtesting (Up to 120,000 candles)."""
+    if not new_candles:
+        return []
+    with CANDLE_CACHE_LOCK:
+        existing = CANDLE_CACHE.get(sym, [])
+        if not existing:
+            out_path = os.path.join(BASE_DIR, "data", f"{sym}_1m.json")
+            if os.path.exists(out_path):
+                try:
+                    with open(out_path, "r", encoding="utf-8") as f:
+                        existing = json.load(f)
+                except Exception:
+                    existing = []
+
+        time_map = {c["time"]: c for c in existing}
+        for c in new_candles:
+            time_map[c["time"]] = c
+        merged = sorted(time_map.values(), key=lambda x: x["time"])
+        if len(merged) > max_len:
+            merged = merged[-max_len:]
+        CANDLE_CACHE[sym] = merged
+
+        if save_to_disk:
+            try:
+                out_path = os.path.join(BASE_DIR, "data", f"{sym}_1m.json")
+                with open(out_path, "w", encoding="utf-8") as f:
+                    json.dump(merged, f, separators=(',', ':'))
+            except Exception:
+                pass
+        return merged
+
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
@@ -276,28 +308,39 @@ class ProductionHandler(http.server.SimpleHTTPRequestHandler):
             }).encode('utf-8'))
             return
 
-        # API: ส่งแท่งเทียน M1 สดล่าสุดจาก MT5 / RAM Cache (Zero-Lag Sync)
+        # API: ส่งแท่งเทียน M1 สดล่าสุดจาก MT5 / RAM Cache (Zero-Lag Sync พร้อมประวัติเต็มย้อนหลังระดับโปร 50,000 - 100,000 แท่ง)
         if path == '/api/candles':
             qs = urllib.parse.parse_qs(parsed_url.query)
             symbol = qs.get('symbol', ['XAUUSD'])[0].upper()
             try:
-                count = int(qs.get('count', [600])[0])
+                count = int(qs.get('count', [100000])[0])
             except Exception:
-                count = 600
+                count = 100000
 
             candles = []
             with CANDLE_CACHE_LOCK:
                 if symbol in CANDLE_CACHE and len(CANDLE_CACHE[symbol]) > 0:
-                    candles = CANDLE_CACHE[symbol][-count:]
+                    candles = list(CANDLE_CACHE[symbol])
 
-            if not candles:
-                data_file = os.path.join(BASE_DIR, "data", f"{symbol}_1m.json")
-                if os.path.exists(data_file):
-                    try:
-                        with open(data_file, "r", encoding="utf-8") as f:
-                            candles = json.load(f)[-count:]
-                    except Exception:
-                        candles = []
+            # ตรวจสอบและผสานข้อมูลประวัติศาสตร์จาก data/{symbol}_1m.json ไม่ให้แท่งเทียนเก่าสูญหาย
+            data_file = os.path.join(BASE_DIR, "data", f"{symbol}_1m.json")
+            if os.path.exists(data_file):
+                try:
+                    with open(data_file, "r", encoding="utf-8") as f:
+                        disk_candles = json.load(f)
+                    if disk_candles:
+                        time_map = {c["time"]: c for c in disk_candles}
+                        for c in candles:
+                            time_map[c["time"]] = c
+                        merged = sorted(time_map.values(), key=lambda x: x["time"])
+                        with CANDLE_CACHE_LOCK:
+                            CANDLE_CACHE[symbol] = merged
+                        candles = merged
+                except Exception:
+                    pass
+
+            if count > 0 and len(candles) > count:
+                candles = candles[-count:]
 
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
@@ -412,31 +455,20 @@ def public_market_price_poller():
             if not is_mt5_live and (now - last_candle_sync >= 4):
                 last_candle_sync = now
 
-                btc_candles = fetch_binance_klines("BTCUSDT", count=600, digits=2)
+                btc_candles = fetch_binance_klines("BTCUSDT", count=1000, digits=2)
                 if btc_candles:
-                    with CANDLE_CACHE_LOCK:
-                        CANDLE_CACHE['BTCUSD'] = btc_candles
-                        CANDLE_CACHE['BTCUSDT'] = btc_candles
-                    with open(os.path.join(BASE_DIR, "data", "BTCUSD_1m.json"), "w", encoding="utf-8") as f:
-                        json.dump(btc_candles, f)
-                    with open(os.path.join(BASE_DIR, "data", "BTCUSDT_1m.json"), "w", encoding="utf-8") as f:
-                        json.dump(btc_candles, f)
+                    merge_and_persist_candles("BTCUSD", btc_candles, max_len=10000, save_to_disk=True)
+                    merge_and_persist_candles("BTCUSDT", btc_candles, max_len=10000, save_to_disk=True)
 
-                eth_candles = fetch_binance_klines("ETHUSDT", count=600, digits=2)
+                eth_candles = fetch_binance_klines("ETHUSDT", count=1000, digits=2)
                 if eth_candles:
-                    with CANDLE_CACHE_LOCK:
-                        CANDLE_CACHE['ETHUSD'] = eth_candles
-                        CANDLE_CACHE['ETHUSDT'] = eth_candles
-                    with open(os.path.join(BASE_DIR, "data", "ETHUSD_1m.json"), "w", encoding="utf-8") as f:
-                        json.dump(eth_candles, f)
+                    merge_and_persist_candles("ETHUSD", eth_candles, max_len=10000, save_to_disk=True)
+                    merge_and_persist_candles("ETHUSDT", eth_candles, max_len=10000, save_to_disk=True)
 
-                sol_candles = fetch_binance_klines("SOLUSDT", count=600, digits=2)
+                sol_candles = fetch_binance_klines("SOLUSDT", count=1000, digits=2)
                 if sol_candles:
-                    with CANDLE_CACHE_LOCK:
-                        CANDLE_CACHE['SOLUSD'] = sol_candles
-                        CANDLE_CACHE['SOLUSDT'] = sol_candles
-                    with open(os.path.join(BASE_DIR, "data", "SOLUSD_1m.json"), "w", encoding="utf-8") as f:
-                        json.dump(sol_candles, f)
+                    merge_and_persist_candles("SOLUSD", sol_candles, max_len=10000, save_to_disk=True)
+                    merge_and_persist_candles("SOLUSDT", sol_candles, max_len=10000, save_to_disk=True)
 
             # 3. Forex & Commodities Live Prices (Yahoo Finance Real Market Data)
             for target_sym, cfg in PUBLIC_SYMBOLS_MAP.items():
@@ -539,7 +571,7 @@ def mt5_candle_sync_worker():
 
             for target_name, sym, digits in sync_list:
                 if not sym: continue
-                rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M1, 0, 600)
+                rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M1, 0, 5000)
                 if rates is not None and len(rates) > 0:
                     candles = []
                     for r in rates:
@@ -559,11 +591,7 @@ def mt5_candle_sync_worker():
                             if candles and candles[-1]["time"] == last_bar["time"]:
                                 last_bar["volume"] = max(last_bar.get("volume", 0), candles[-1].get("volume", 0))
                     else:
-                        with CANDLE_CACHE_LOCK:
-                            CANDLE_CACHE[target_name] = candles
-                        out_path = os.path.join(BASE_DIR, "data", f"{target_name}_1m.json")
-                        with open(out_path, "w", encoding="utf-8") as f:
-                            json.dump(candles, f)
+                        merge_and_persist_candles(target_name, candles, max_len=10000, save_to_disk=True)
         except Exception:
             pass
 
@@ -665,17 +693,11 @@ if __name__ == "__main__":
     def handle_tv_candle_update(sym, candles, is_snapshot):
         if not candles:
             return
-        with CANDLE_CACHE_LOCK:
-            if is_snapshot:
-                CANDLE_CACHE[sym] = candles
-                try:
-                    out_path = os.path.join(BASE_DIR, "data", f"{sym}_1m.json")
-                    with open(out_path, "w", encoding="utf-8") as f:
-                        json.dump(candles[-1000:], f)
-                except Exception:
-                    pass
-            else:
-                bar = candles[0]
+        if is_snapshot:
+            merge_and_persist_candles(sym, candles, max_len=10000, save_to_disk=True)
+        else:
+            bar = candles[0]
+            with CANDLE_CACHE_LOCK:
                 if sym not in CANDLE_CACHE:
                     CANDLE_CACHE[sym] = []
                 cache = CANDLE_CACHE[sym]
@@ -683,7 +705,7 @@ if __name__ == "__main__":
                     cache[-1] = bar
                 elif cache and bar["time"] > cache[-1]["time"]:
                     cache.append(bar)
-                    if len(cache) > 1200:
+                    if len(cache) > 10000:
                         del cache[0]
                 elif not cache:
                     cache.append(bar)

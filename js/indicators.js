@@ -163,54 +163,75 @@ const Indicators = {
         if (!candles || candles.length < 2) return [];
 
         const result = [];
+        // ตรวจสอบความละเอียดทศนิยมของราคาเพื่อไม่ให้ปัดเศษทิ้ง (เช่น Forex 5 ตำแหน่ง หรือ Crypto)
+        const sampleClose = candles[0].close ? String(candles[0].close) : '';
+        const decLen = sampleClose.includes('.') ? sampleClose.split('.')[1].length : 4;
+        const precision = Math.max(4, Math.min(8, decLen));
+
         let isUptrend = (candles[1].close >= candles[0].close);
         let ep = isUptrend ? Math.max(candles[0].high, candles[1].high) : Math.min(candles[0].low, candles[1].low);
-        let sar = isUptrend ? Math.min(candles[0].low, candles[1].low) : Math.max(candles[0].high, candles[1].high);
+        let sar = isUptrend ? candles[0].low : candles[0].high;
         let af = step;
+        let justReversed = false;
 
         result.push({
             time: candles[0].time,
-            value: Number(sar.toFixed(4)),
+            value: Number(sar.toFixed(precision)),
             isUp: isUptrend
         });
 
         for (let i = 1; i < candles.length; i++) {
             const prevCandle = candles[i - 1];
             const currCandle = candles[i];
-            const prevPrevCandle = i >= 2 ? candles[i - 2] : prevCandle;
 
-            // คำนวณ SAR ของแท่งปัจจุบัน
+            // คำนวณ SAR ของแท่งปัจจุบันตามอัตราเร่ง AF
             sar = sar + af * (ep - sar);
 
             if (isUptrend) {
-                // ในเทรนด์ขาขึ้น SAR ต้องไม่สูงกว่า Low ของ 2 แท่งก่อนหน้า
-                sar = Math.min(sar, prevCandle.low, prevPrevCandle.low);
+                // ในเทรนด์ขาขึ้น SAR ต้องไม่สูงกว่า Low ของแท่งก่อนหน้า (และ 2 แท่งก่อนหน้า ถ้าไม่ได้เพิ่งกลับตัว)
+                if (justReversed) {
+                    sar = Math.min(sar, prevCandle.low);
+                    justReversed = false;
+                } else {
+                    const prevPrevCandle = i >= 2 ? candles[i - 2] : prevCandle;
+                    sar = Math.min(sar, prevCandle.low, prevPrevCandle.low);
+                }
 
                 if (currCandle.low < sar) {
-                    // กลับตัวเป็นเทรนด์ขาลง (Reversal to Downtrend)
+                    // กลับตัวเป็นเทรนด์ขาลงทันที (Reversal to Downtrend)
+                    // จุด SAR ย้ายข้างขึ้นไปอยู่ด้านบนแท่งเทียนที่จุดสูงสุด EP เดิม
                     isUptrend = false;
                     sar = Math.max(ep, currCandle.high);
                     ep = currCandle.low;
                     af = step;
+                    justReversed = true;
                 } else {
-                    // ต่อเนื่องขาขึ้น
+                    // ต่อเนื่องในขาขึ้น: อัปเดตจุดสูงสุดใหม่และเร่งค่า AF
                     if (currCandle.high > ep) {
                         ep = currCandle.high;
                         af = Math.min(max, af + step);
                     }
                 }
             } else {
-                // ในเทรนด์ขาลง SAR ต้องไม่ต่ำกว่า High ของ 2 แท่งก่อนหน้า
-                sar = Math.max(sar, prevCandle.high, prevPrevCandle.high);
+                // ในเทรนด์ขาลง SAR ต้องไม่ต่ำกว่า High ของแท่งก่อนหน้า (และ 2 แท่งก่อนหน้า ถ้าไม่ได้เพิ่งกลับตัว)
+                if (justReversed) {
+                    sar = Math.max(sar, prevCandle.high);
+                    justReversed = false;
+                } else {
+                    const prevPrevCandle = i >= 2 ? candles[i - 2] : prevCandle;
+                    sar = Math.max(sar, prevCandle.high, prevPrevCandle.high);
+                }
 
                 if (currCandle.high > sar) {
-                    // กลับตัวเป็นเทรนด์ขาขึ้น (Reversal to Uptrend)
+                    // กลับตัวเป็นเทรนด์ขาขึ้นทันที (Reversal to Uptrend)
+                    // จุด SAR ย้ายข้างลงมาอยู่ด้านล่างแท่งเทียนที่จุดต่ำสุด EP เดิม
                     isUptrend = true;
                     sar = Math.min(ep, currCandle.low);
                     ep = currCandle.high;
                     af = step;
+                    justReversed = true;
                 } else {
-                    // ต่อเนื่องขาลง
+                    // ต่อเนื่องในขาลง: อัปเดตจุดต่ำสุดใหม่และเร่งค่า AF
                     if (currCandle.low < ep) {
                         ep = currCandle.low;
                         af = Math.min(max, af + step);
@@ -220,7 +241,7 @@ const Indicators = {
 
             result.push({
                 time: currCandle.time,
-                value: Number(sar.toFixed(4)),
+                value: Number(sar.toFixed(precision)),
                 isUp: isUptrend
             });
         }

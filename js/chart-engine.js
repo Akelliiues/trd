@@ -308,20 +308,23 @@ class ChartEngine {
             return this.rawCache[symbol];
         }
 
-        // 1. ดึงจาก RAM Cache Endpoint /api/candles (Realtime 0 Latency จาก MT5 หรือ Server Poller)
+        // 1. ดึงจาก RAM Cache Endpoint /api/candles (Realtime 0 Latency จาก MT5 หรือ Server Poller ประวัติระดับโปร 100,000 แท่ง)
         try {
-            const resp = await fetch(`/api/candles?symbol=${symbol}&count=1000&t=${now}`, { cache: 'no-store' });
+            const resp = await fetch(`/api/candles?symbol=${symbol}&count=100000&t=${now}`, { cache: 'no-store' });
             if (resp.ok) {
                 const resJson = await resp.json();
                 if (resJson.status === 'ok' && resJson.candles && resJson.candles.length > 0) {
-                    const lastCandle = resJson.candles[resJson.candles.length - 1];
-                    const nowSec = Math.floor(Date.now() / 1000) + this.thailandOffset;
-                    // ถ้าแท่งเทียนที่ได้ไม่เก่าเกิน 30 นาที ให้ใช้งานได้ทันที
-                    if (nowSec - lastCandle.time < 1800) {
-                        this.rawCache[symbol] = resJson.candles;
-                        this.rawCacheTime[symbol] = now;
-                        return resJson.candles;
+                    let candles = resJson.candles;
+                    // รวมเข้ากับแคชเดิมถ้ามี เพื่อให้ข้อมูลย้อนหลังสำหรับการ Backtest ไม่สูญหาย
+                    if (this.rawCache[symbol] && this.rawCache[symbol].length > 0) {
+                        const timeMap = new Map();
+                        for (const c of this.rawCache[symbol]) timeMap.set(c.time, c);
+                        for (const c of candles) timeMap.set(c.time, c);
+                        candles = Array.from(timeMap.values()).sort((a, b) => a.time - b.time);
                     }
+                    this.rawCache[symbol] = candles;
+                    this.rawCacheTime[symbol] = now;
+                    return candles;
                 }
             }
         } catch (e) {}
@@ -335,7 +338,7 @@ class ChartEngine {
             try {
                 let binanceSym = isBtc ? 'BTCUSDT' : (isEth ? 'ETHUSDT' : 'SOLUSDT');
                 let decimals = 2;
-                const bResp = await fetch(`https://api.binance.com/api/v3/klines?symbol=${binanceSym}&interval=1m&limit=600`);
+                const bResp = await fetch(`https://api.binance.com/api/v3/klines?symbol=${binanceSym}&interval=1m&limit=1000`);
                 if (bResp.ok) {
                     const rawKlines = await bResp.json();
                     if (Array.isArray(rawKlines) && rawKlines.length > 0) {
@@ -347,9 +350,16 @@ class ChartEngine {
                             close: Number(parseFloat(k[4]).toFixed(decimals)),
                             volume: Math.round(parseFloat(k[5]))
                         }));
-                        this.rawCache[symbol] = parsed;
+                        let candles = parsed;
+                        if (this.rawCache[symbol] && this.rawCache[symbol].length > 0) {
+                            const timeMap = new Map();
+                            for (const c of this.rawCache[symbol]) timeMap.set(c.time, c);
+                            for (const c of parsed) timeMap.set(c.time, c);
+                            candles = Array.from(timeMap.values()).sort((a, b) => a.time - b.time);
+                        }
+                        this.rawCache[symbol] = candles;
                         this.rawCacheTime[symbol] = now;
-                        return parsed;
+                        return candles;
                     }
                 }
             } catch (e) {}
@@ -361,9 +371,16 @@ class ChartEngine {
             if (resp.ok) {
                 const data = await resp.json();
                 if (data && data.length > 0) {
-                    this.rawCache[symbol] = data;
+                    let candles = data;
+                    if (this.rawCache[symbol] && this.rawCache[symbol].length > 0) {
+                        const timeMap = new Map();
+                        for (const c of data) timeMap.set(c.time, c);
+                        for (const c of this.rawCache[symbol]) timeMap.set(c.time, c);
+                        candles = Array.from(timeMap.values()).sort((a, b) => a.time - b.time);
+                    }
+                    this.rawCache[symbol] = candles;
                     this.rawCacheTime[symbol] = now;
-                    return data;
+                    return candles;
                 }
             }
         } catch (e) {
@@ -372,7 +389,7 @@ class ChartEngine {
 
         // 4. Fallback generator
         const basePrice = symbol.includes('BTC') ? 76000 : (symbol.includes('XAU') ? 4345.000 : 1.15300);
-        const data = this.generateSampleData(symbol, basePrice, 1500);
+        const data = this.generateSampleData(symbol, basePrice, 3000);
         this.rawCache[symbol] = data;
         this.rawCacheTime[symbol] = now;
         return data;
@@ -2375,7 +2392,14 @@ class ChartEngine {
     handleCandlesSnapshot(data) {
         if (!data || !data.symbol || !data.candles || data.candles.length === 0) return;
         const sym = data.symbol;
-        this.rawCache[sym] = data.candles;
+        if (this.rawCache[sym] && this.rawCache[sym].length > 0) {
+            const timeMap = new Map();
+            for (const c of this.rawCache[sym]) timeMap.set(c.time, c);
+            for (const c of data.candles) timeMap.set(c.time, c);
+            this.rawCache[sym] = Array.from(timeMap.values()).sort((a, b) => a.time - b.time);
+        } else {
+            this.rawCache[sym] = data.candles;
+        }
         this.rawCacheTime[sym] = Date.now();
         if (this.charts) {
             for (const cell of this.charts) {
@@ -3052,13 +3076,22 @@ class ChartEngine {
 
         for (const sym of uniqueSymbols) {
             try {
-                const resp = await fetch(`/api/candles?symbol=${sym}&count=300&t=${Date.now()}`, { cache: 'no-store' });
+                const reqCount = forceFullRefresh ? 100000 : 300;
+                const resp = await fetch(`/api/candles?symbol=${sym}&count=${reqCount}&t=${Date.now()}`, { cache: 'no-store' });
                 if (!resp.ok) continue;
                 const resJson = await resp.json();
                 if (resJson.status !== 'ok' || !resJson.candles || resJson.candles.length === 0) continue;
 
                 const freshCandles = resJson.candles;
-                this.rawCache[sym] = freshCandles;
+                // รวมแท่งเทียนสดเข้ากับข้อมูลเดิมโดยไม่ลบประวัติศาสตร์เดิม
+                if (this.rawCache[sym] && this.rawCache[sym].length > 0) {
+                    const timeMap = new Map();
+                    for (const c of this.rawCache[sym]) timeMap.set(c.time, c);
+                    for (const c of freshCandles) timeMap.set(c.time, c);
+                    this.rawCache[sym] = Array.from(timeMap.values()).sort((a, b) => a.time - b.time);
+                } else {
+                    this.rawCache[sym] = freshCandles;
+                }
                 this.rawCacheTime[sym] = Date.now();
 
                 const matchingCharts = this.charts.filter(c => c.symbol === sym);
@@ -3066,11 +3099,12 @@ class ChartEngine {
                     if (cell.isRangeBar || cell.isTickBar) continue;
                     
                     const minutes = this.parseTimeframeToMinutes(cell.timeframe);
-                    const resampled = Resampler.resampleTimeframe(freshCandles, minutes);
+                    const resampled = Resampler.resampleTimeframe(this.rawCache[sym], minutes);
                     if (!resampled || resampled.length === 0) continue;
 
-                    if (!cell.visibleCandles || cell.visibleCandles.length === 0 || forceFullRefresh) {
-                        cell.rawM1 = freshCandles;
+                    cell.rawM1 = this.rawCache[sym];
+
+                    if (!cell.visibleCandles || cell.visibleCandles.length === 0) {
                         cell.visibleCandles = resampled;
                         cell.candleSeries.setData(resampled.map(c => ({
                             time: c.time,
@@ -3212,12 +3246,21 @@ class ChartEngine {
             existing.step = stepVal;
             existing.max = maxVal;
             if (existing.series) {
-                existing.series.applyOptions({
+                const updateOpts = {
                     color: resolvedColor,
                     lineWidth: resolvedWidth,
-                    lineStyle: resolvedStyle,
                     title: resolvedTitle
-                });
+                };
+                if (isPSAR) {
+                    updateOpts.lineVisible = false;
+                    updateOpts.pointMarkersVisible = true;
+                    updateOpts.pointMarkersRadius = Math.max(2, resolvedWidth + 1.5);
+                } else {
+                    updateOpts.lineVisible = true;
+                    updateOpts.pointMarkersVisible = false;
+                    updateOpts.lineStyle = resolvedStyle;
+                }
+                existing.series.applyOptions(updateOpts);
             }
             this.recalculateIndicators(cell);
             if (this.showToast) {
@@ -3240,7 +3283,9 @@ class ChartEngine {
             series = cell.chart.addLineSeries({
                 color: resolvedColor,
                 lineWidth: resolvedWidth,
-                lineStyle: resolvedStyle,
+                lineVisible: false,
+                pointMarkersVisible: true,
+                pointMarkersRadius: Math.max(2, resolvedWidth + 1.5),
                 title: resolvedTitle,
                 crosshairMarkerVisible: false
             });
@@ -3305,12 +3350,21 @@ class ChartEngine {
         const resolvedStyle = typeof ind.lineStyle === 'number' ? ind.lineStyle : (lineStyleMap[ind.lineStyle] !== undefined ? lineStyleMap[ind.lineStyle] : (isPSAR ? 1 : 0));
 
         if (ind.series) {
-            ind.series.applyOptions({
+            const updateOpts = {
                 color: ind.color,
                 lineWidth: ind.lineWidth,
-                lineStyle: resolvedStyle,
                 title: ind.title
-            });
+            };
+            if (isPSAR) {
+                updateOpts.lineVisible = false;
+                updateOpts.pointMarkersVisible = true;
+                updateOpts.pointMarkersRadius = Math.max(2, ind.lineWidth + 1.5);
+            } else {
+                updateOpts.lineVisible = true;
+                updateOpts.pointMarkersVisible = false;
+                updateOpts.lineStyle = resolvedStyle;
+            }
+            ind.series.applyOptions(updateOpts);
         }
 
         this.recalculateIndicators(cell);

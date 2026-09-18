@@ -184,7 +184,7 @@ class TradingViewWSFeed:
             chart_session, "sds_gold", f"={json.dumps({'symbol': self.gold_sym, 'adjustment': 'splits'})}"
         ])
         self._send_msg("create_series", [
-            chart_session, "sds_1", "s1", "sds_gold", "1", 600
+            chart_session, "sds_1", "s1", "sds_gold", "1", 5000
         ])
 
         # Message processing loop
@@ -312,7 +312,7 @@ class TradingViewWSFeed:
                     if self.on_sse_broadcast:
                         self.on_sse_broadcast("candles_snapshot", {
                             "symbol": "XAUUSD",
-                            "candles": candles[-300:]
+                            "candles": candles[-2000:]
                         })
 
         # 3. Realtime Candlestick Update (Current Bar Tick-by-Tick): 'du'
