@@ -308,41 +308,59 @@ class ChartEngine {
             return this.rawCache[symbol];
         }
 
+        let baseCandles = [];
+
         // 1. ดึงจาก RAM Cache Endpoint /api/candles (Realtime 0 Latency จาก MT5 หรือ Server Poller ประวัติระดับโปร 100,000 แท่ง)
         try {
             const resp = await fetch(`/api/candles?symbol=${symbol}&count=100000&t=${now}`, { cache: 'no-store' });
             if (resp.ok) {
                 const resJson = await resp.json();
                 if (resJson.status === 'ok' && resJson.candles && resJson.candles.length > 0) {
-                    let candles = resJson.candles;
-                    // รวมเข้ากับแคชเดิมถ้ามี เพื่อให้ข้อมูลย้อนหลังสำหรับการ Backtest ไม่สูญหาย
-                    if (this.rawCache[symbol] && this.rawCache[symbol].length > 0) {
-                        const timeMap = new Map();
-                        for (const c of this.rawCache[symbol]) timeMap.set(c.time, c);
-                        for (const c of candles) timeMap.set(c.time, c);
-                        candles = Array.from(timeMap.values()).sort((a, b) => a.time - b.time);
-                    }
-                    this.rawCache[symbol] = candles;
-                    this.rawCacheTime[symbol] = now;
-                    return candles;
+                    baseCandles = resJson.candles;
                 }
             }
         } catch (e) {}
 
-        // 2. Direct Browser Fallback to Binance Spot Klines (Crypto 24/7)
+        // 2. หากยังไม่มี ให้โหลดประวัติศาสตร์จากไฟล์ static data/{symbol}_1m.json
+        if (!baseCandles || baseCandles.length === 0) {
+            try {
+                const resp = await fetch(`data/${symbol}_1m.json?t=${now}`, { cache: 'no-store' });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (Array.isArray(data) && data.length > 0) {
+                        baseCandles = data;
+                    }
+                }
+            } catch (e) {
+                console.warn(`Could not load local data for ${symbol}`, e);
+            }
+        }
+
+        // ผสานเข้ากับแคชในหน่วยความจำเดิมถ้ามี เพื่อรักษาประวัติศาสตร์ Backtest เต็ม
+        if (this.rawCache[symbol] && this.rawCache[symbol].length > 0) {
+            const timeMap = new Map();
+            for (const c of this.rawCache[symbol]) timeMap.set(c.time, c);
+            for (const c of baseCandles) timeMap.set(c.time, c);
+            baseCandles = Array.from(timeMap.values()).sort((a, b) => a.time - b.time);
+        }
+
+        // 3. ระบบ Auto Gap-Bridging อัจฉริยะ (เชื่อมช่องว่างเวลาสดตลอด 24/7 ไม่ให้กราฟกระโดด)
+        // ดึงแท่งเทียนสด 1,000 แท่งล่าสุดจาก Binance Spot Klines (PAXG สำหรับทองคำ, BTC, ETH, SOL)
+        // มาเติมช่องว่างระหว่างประวัติศาสตร์เดิมกับเวลาปัจจุบันแบบไร้รอยต่อ
         const isBtc = symbol.includes('BTC');
         const isEth = symbol.includes('ETH');
         const isSol = symbol.includes('SOL');
+        const isGold = symbol.includes('XAU') || symbol.includes('GOLD');
 
-        if (isBtc || isEth || isSol) {
+        if (isBtc || isEth || isSol || isGold) {
             try {
-                let binanceSym = isBtc ? 'BTCUSDT' : (isEth ? 'ETHUSDT' : 'SOLUSDT');
-                let decimals = 2;
+                let binanceSym = isGold ? 'PAXGUSDT' : (isBtc ? 'BTCUSDT' : (isEth ? 'ETHUSDT' : 'SOLUSDT'));
+                let decimals = isGold ? 2 : 2;
                 const bResp = await fetch(`https://api.binance.com/api/v3/klines?symbol=${binanceSym}&interval=1m&limit=1000`);
                 if (bResp.ok) {
                     const rawKlines = await bResp.json();
                     if (Array.isArray(rawKlines) && rawKlines.length > 0) {
-                        const parsed = rawKlines.map(k => ({
+                        const freshCandles = rawKlines.map(k => ({
                             time: Math.floor(k[0] / 1000) + this.thailandOffset,
                             open: Number(parseFloat(k[1]).toFixed(decimals)),
                             high: Number(parseFloat(k[2]).toFixed(decimals)),
@@ -350,44 +368,26 @@ class ChartEngine {
                             close: Number(parseFloat(k[4]).toFixed(decimals)),
                             volume: Math.round(parseFloat(k[5]))
                         }));
-                        let candles = parsed;
-                        if (this.rawCache[symbol] && this.rawCache[symbol].length > 0) {
-                            const timeMap = new Map();
-                            for (const c of this.rawCache[symbol]) timeMap.set(c.time, c);
-                            for (const c of parsed) timeMap.set(c.time, c);
-                            candles = Array.from(timeMap.values()).sort((a, b) => a.time - b.time);
-                        }
-                        this.rawCache[symbol] = candles;
-                        this.rawCacheTime[symbol] = now;
-                        return candles;
-                    }
-                }
-            } catch (e) {}
-        }
 
-        // 3. Fallback ดึงจากไฟล์ static data/{symbol}_1m.json
-        try {
-            const resp = await fetch(`data/${symbol}_1m.json?t=${now}`, { cache: 'no-store' });
-            if (resp.ok) {
-                const data = await resp.json();
-                if (data && data.length > 0) {
-                    let candles = data;
-                    if (this.rawCache[symbol] && this.rawCache[symbol].length > 0) {
+                        // ผสานแท่งเทียนสด 1,000 แท่งล่าสุดเข้ากับประวัติศาสตร์เดิม เชื่อม Gap ทันที
                         const timeMap = new Map();
-                        for (const c of data) timeMap.set(c.time, c);
-                        for (const c of this.rawCache[symbol]) timeMap.set(c.time, c);
-                        candles = Array.from(timeMap.values()).sort((a, b) => a.time - b.time);
+                        for (const c of baseCandles) timeMap.set(c.time, c);
+                        for (const c of freshCandles) timeMap.set(c.time, c);
+                        baseCandles = Array.from(timeMap.values()).sort((a, b) => a.time - b.time);
                     }
-                    this.rawCache[symbol] = candles;
-                    this.rawCacheTime[symbol] = now;
-                    return candles;
                 }
+            } catch (e) {
+                console.warn(`[Auto Gap-Bridging] Failed for ${symbol} via Binance:`, e);
             }
-        } catch (e) {
-            console.warn(`Could not load local data for ${symbol}, generating dynamic series`, e);
         }
 
-        // 4. Fallback generator
+        if (baseCandles && baseCandles.length > 0) {
+            this.rawCache[symbol] = baseCandles;
+            this.rawCacheTime[symbol] = now;
+            return baseCandles;
+        }
+
+        // 4. Fallback generator กรณีไม่พบข้อมูลเลย
         const basePrice = symbol.includes('BTC') ? 76000 : (symbol.includes('XAU') ? 4345.000 : 1.15300);
         const data = this.generateSampleData(symbol, basePrice, 3000);
         this.rawCache[symbol] = data;

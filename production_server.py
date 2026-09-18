@@ -470,6 +470,11 @@ def public_market_price_poller():
                     merge_and_persist_candles("SOLUSD", sol_candles, max_len=10000, save_to_disk=True)
                     merge_and_persist_candles("SOLUSDT", sol_candles, max_len=10000, save_to_disk=True)
 
+                # 2.4 Gold Spot Backup (PAXGUSDT 1:1)
+                paxg_candles = fetch_binance_klines("PAXGUSDT", count=1000, digits=2)
+                if paxg_candles:
+                    merge_and_persist_candles("XAUUSD", paxg_candles, max_len=100000, save_to_disk=True)
+
             # 3. Forex & Commodities Live Prices (Yahoo Finance Real Market Data)
             for target_sym, cfg in PUBLIC_SYMBOLS_MAP.items():
                 if is_mt5_live and target_sym in LIVE_RATES_CACHE:
@@ -584,14 +589,7 @@ def mt5_candle_sync_worker():
                             "volume": int(r['tick_volume'])
                         })
                     
-                    if target_name == "XAUUSD" and "XAUUSD" in CANDLE_CACHE and len(CANDLE_CACHE["XAUUSD"]) > 0:
-                        # รักษาโครงสร้างแท่งเทียน IC Markets ECN เป็นหลัก ปรับปรุงเฉพาะ volume ล่าสุดจาก MT5
-                        with CANDLE_CACHE_LOCK:
-                            last_bar = CANDLE_CACHE["XAUUSD"][-1]
-                            if candles and candles[-1]["time"] == last_bar["time"]:
-                                last_bar["volume"] = max(last_bar.get("volume", 0), candles[-1].get("volume", 0))
-                    else:
-                        merge_and_persist_candles(target_name, candles, max_len=10000, save_to_disk=True)
+                    merge_and_persist_candles(target_name, candles, max_len=100000, save_to_disk=True)
         except Exception:
             pass
 
