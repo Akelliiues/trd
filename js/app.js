@@ -2308,7 +2308,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // PWA Service Worker & Force-Update Auto Refresh Lifecycle
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-            navigator.serviceWorker.register('./sw.js?v=2.5.7')
+            navigator.serviceWorker.register('./sw.js?v=2.5.9')
                 .then(reg => {
                     console.log('[PWA] ServiceWorker registered with scope:', reg.scope);
                     

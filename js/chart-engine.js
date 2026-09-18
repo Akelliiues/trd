@@ -18,7 +18,7 @@ const INDICATOR_PRESETS = {
         indicators: [
             { type: 'EMA', period: 9, color: '#38bdf8', lineWidth: 1, lineStyle: 'solid', title: 'EMA 9 (Fast)' },
             { type: 'EMA', period: 21, color: '#f472b6', lineWidth: 1, lineStyle: 'solid', title: 'EMA 21 (Trigger)' },
-            { type: 'PSAR', step: 0.02, max: 0.20, color: '#34d399', lineWidth: 1, lineStyle: 'dotted', title: 'PSAR (0.02, 0.2)' },
+            { type: 'PSAR', step: 0.02, max: 0.20, color: '#34d399', lineWidth: 1, title: 'PSAR (0.02, 0.2)' },
             { type: 'RSI', period: 7, color: '#fbbf24', lineWidth: 1, lineStyle: 'solid', title: 'RSI 7 (Momentum)' }
         ]
     },
@@ -29,7 +29,7 @@ const INDICATOR_PRESETS = {
         indicators: [
             { type: 'EMA', period: 20, color: '#38bdf8', lineWidth: 1, lineStyle: 'solid', title: 'EMA 20 (Baseline)' },
             { type: 'EMA', period: 50, color: '#fb923c', lineWidth: 1, lineStyle: 'solid', title: 'EMA 50 (Trend)' },
-            { type: 'PSAR', step: 0.015, max: 0.15, color: '#34d399', lineWidth: 1, lineStyle: 'dotted', title: 'PSAR (0.015, 0.15)' },
+            { type: 'PSAR', step: 0.015, max: 0.15, color: '#34d399', lineWidth: 1, title: 'PSAR (0.015, 0.15)' },
             { type: 'RSI', period: 14, color: '#c084fc', lineWidth: 1, lineStyle: 'solid', title: 'RSI 14' }
         ]
     },
@@ -40,7 +40,7 @@ const INDICATOR_PRESETS = {
         indicators: [
             { type: 'EMA', period: 50, color: '#38bdf8', lineWidth: 1, lineStyle: 'solid', title: 'EMA 50 (Pullback)' },
             { type: 'EMA', period: 200, color: '#f87171', lineWidth: 1, lineStyle: 'solid', title: 'EMA 200 (Major Trend)' },
-            { type: 'PSAR', step: 0.01, max: 0.10, color: '#fbbf24', lineWidth: 1, lineStyle: 'dotted', title: 'PSAR (0.01, 0.1)' },
+            { type: 'PSAR', step: 0.01, max: 0.10, color: '#fbbf24', lineWidth: 1, title: 'PSAR (0.01, 0.1)' },
             { type: 'RSI', period: 14, color: '#34d399', lineWidth: 1, lineStyle: 'solid', title: 'RSI 14' }
         ]
     },
@@ -52,7 +52,7 @@ const INDICATOR_PRESETS = {
             { type: 'SMA', period: 20, color: '#38bdf8', lineWidth: 1, lineStyle: 'solid', title: 'SMA 20 (Fast)' },
             { type: 'SMA', period: 50, color: '#fb923c', lineWidth: 1, lineStyle: 'solid', title: 'SMA 50 (Med)' },
             { type: 'SMA', period: 200, color: '#f87171', lineWidth: 1, lineStyle: 'dashed', title: 'SMA 200 (Slow)' },
-            { type: 'PSAR', step: 0.02, max: 0.20, color: '#34d399', lineWidth: 1, lineStyle: 'dotted', title: 'PSAR (0.02, 0.2)' }
+            { type: 'PSAR', step: 0.02, max: 0.20, color: '#34d399', lineWidth: 1, title: 'PSAR (0.02, 0.2)' }
         ]
     },
     'pullback_rsi': {
@@ -61,7 +61,7 @@ const INDICATOR_PRESETS = {
         description: 'จับจังหวะ Oversold / Overbought และ Pullback พร้อม SMA ซ้อนบนเส้น RSI และ Parabolic SAR',
         indicators: [
             { type: 'EMA', period: 20, color: '#38bdf8', lineWidth: 1, lineStyle: 'solid', title: 'EMA 20' },
-            { type: 'PSAR', step: 0.02, max: 0.20, color: '#f87171', lineWidth: 1, lineStyle: 'dotted', title: 'PSAR (Trailing Stop)' },
+            { type: 'PSAR', step: 0.02, max: 0.20, color: '#f87171', lineWidth: 1, title: 'PSAR (Trailing Stop)' },
             { type: 'RSI', period: 14, color: '#f472b6', lineWidth: 1, lineStyle: 'solid', title: 'RSI 14' },
             { type: 'SMA', period: 9, color: '#fbbf24', lineWidth: 1, lineStyle: 'dashed', title: 'SMA 9 on RSI', parentType: 'RSI' }
         ]
