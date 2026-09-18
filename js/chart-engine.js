@@ -632,6 +632,7 @@ class ChartEngine {
             symbol,
             timeframe,
             element: cellEl,
+            container: cellEl,
             viewport,
             vpCanvas,
             canvas: vpCanvas,
@@ -2758,18 +2759,16 @@ class ChartEngine {
         if (!rawPaxg || isNaN(rawPaxg) || rawPaxg <= 0) return;
         this.lastPaxgPrice = rawPaxg;
 
-        // หากยังไม่ได้เทียบ Anchor จาก IC Markets ให้ตรวจสอบจาก cachedLiveRates
-        if (!this.goldAnchorICPrice) {
-            const cachedXAU = (this.cachedLiveRates && this.cachedLiveRates['XAUUSD']) ? (this.cachedLiveRates['XAUUSD'].bid || this.cachedLiveRates['XAUUSD'].close) : null;
-            if (cachedXAU && !isNaN(cachedXAU) && cachedXAU > 1000) {
-                this.goldAnchorICPrice = Number(cachedXAU);
-                this.goldAnchorPaxgPrice = rawPaxg;
-                this.goldDelta = this.goldAnchorICPrice - this.goldAnchorPaxgPrice;
-            } else {
-                this.goldAnchorICPrice = rawPaxg;
-                this.goldAnchorPaxgPrice = rawPaxg;
-                this.goldDelta = 0;
-            }
+        // ซิงค์และปรับจูน Calibration Delta ให้ตรงกับ IC Markets / MT5 / TradingView แบบอัตโนมัติ
+        const cachedXAU = (this.cachedLiveRates && this.cachedLiveRates['XAUUSD']) ? (this.cachedLiveRates['XAUUSD'].bid || this.cachedLiveRates['XAUUSD'].close) : null;
+        if (cachedXAU && !isNaN(cachedXAU) && cachedXAU > 1000) {
+            this.goldAnchorICPrice = Number(cachedXAU);
+            this.goldAnchorPaxgPrice = rawPaxg;
+            this.goldDelta = this.goldAnchorICPrice - this.goldAnchorPaxgPrice;
+        } else if (this.goldDelta === undefined) {
+            this.goldAnchorICPrice = rawPaxg;
+            this.goldAnchorPaxgPrice = rawPaxg;
+            this.goldDelta = 0;
         }
 
         // คำนวณราคา Gold ที่ผสาน IC Markets Benchmark เข้ากับความถี่ระดับ Micro-Tick จาก PAXG
@@ -4550,8 +4549,9 @@ class ChartEngine {
         this.showToast(`🔔 ตั้งแจ้งเตือนราคา ${symbol} ที่ $${alertPrice.toFixed(decimals)} เรียบร้อย`);
     }
 
-    deletePriceAlert(alertId) {
-        if (!this.priceAlerts) return;
+    deletePriceAlert(arg1, arg2) {
+        const alertId = arg2 || arg1;
+        if (!this.priceAlerts || !alertId) return;
         this.priceAlerts = this.priceAlerts.filter(a => a.id !== alertId);
         this.savePriceAlerts();
         this.charts.forEach(c => this.updateOverlays(c));
@@ -5281,29 +5281,48 @@ class ChartEngine {
     }
 
     deleteSelectedDrawing() {
-        const cell = this.charts[this.activeChartIndex];
-        if (!cell || !cell.selectedDrawingId) return;
-        const drawingId = cell.selectedDrawingId;
-        cell.drawings = (cell.drawings || []).filter(d => d.id !== drawingId);
-        cell.selectedDrawingId = null;
+        let deleted = false;
+        for (const cell of this.charts) {
+            if (cell && cell.selectedDrawingId) {
+                const drawingId = cell.selectedDrawingId;
+                cell.drawings = (cell.drawings || []).filter(d => d.id !== drawingId);
+                cell.selectedDrawingId = null;
+                this.saveDrawings(cell.symbol, cell.drawings);
+                this.updateOverlays(cell);
+                deleted = true;
+            }
+        }
         this.hideDrawingActionBar();
-        this.saveDrawings(cell.symbol, cell.drawings);
-        this.updateOverlays(cell);
-        this.showToast('🗑️ ลบภาพวาดเรียบร้อย');
+        if (deleted) {
+            this.showToast('🗑️ ลบภาพวาดเรียบร้อย');
+        }
     }
 
     deleteDrawingById(cellIndex, drawingId) {
-        const idx = cellIndex !== undefined ? cellIndex : this.activeChartIndex;
-        const cell = this.charts[idx];
-        if (!cell) return;
-        cell.drawings = (cell.drawings || []).filter(d => d.id !== drawingId);
-        if (cell.selectedDrawingId === drawingId) {
-            cell.selectedDrawingId = null;
+        let found = false;
+        const checkCells = [];
+        if (cellIndex !== undefined && this.charts[cellIndex]) {
+            checkCells.push(this.charts[cellIndex]);
+        }
+        for (const c of this.charts) {
+            if (!checkCells.includes(c)) checkCells.push(c);
+        }
+
+        for (const cell of checkCells) {
+            if (cell && cell.drawings && cell.drawings.some(d => d.id === drawingId)) {
+                cell.drawings = cell.drawings.filter(d => d.id !== drawingId);
+                if (cell.selectedDrawingId === drawingId) {
+                    cell.selectedDrawingId = null;
+                }
+                this.saveDrawings(cell.symbol, cell.drawings);
+                this.updateOverlays(cell);
+                found = true;
+            }
         }
         this.hideDrawingActionBar();
-        this.saveDrawings(cell.symbol, cell.drawings);
-        this.updateOverlays(cell);
-        this.showToast('🗑️ ลบภาพวาดเรียบร้อย');
+        if (found) {
+            this.showToast('🗑️ ลบภาพวาดเรียบร้อย');
+        }
     }
 
     scaleTextDrawing(cellIndex, drawingId, delta) {
@@ -5359,7 +5378,8 @@ class ChartEngine {
     }
 
     showDrawingActionBar(cell, drawing) {
-        if (!cell || !cell.container || !drawing) return;
+        if (!cell || (!cell.container && !cell.element) || !drawing) return;
+        if (!cell.container && cell.element) cell.container = cell.element;
         let bar = document.getElementById('drawing-action-bar');
         if (!bar) {
             bar = document.createElement('div');
@@ -5528,7 +5548,13 @@ class ChartEngine {
 
     getAlertHitTest(cellObj, px, py) {
         if (!cellObj || !cellObj.candleSeries) return null;
-        const alerts = this.priceAlerts[cellObj.symbol] || [];
+        const alerts = (this.priceAlerts || []).filter(a => {
+            if (!a || !a.symbol) return false;
+            if (a.symbol === cellObj.symbol) return true;
+            if ((cellObj.symbol.includes('XAU') || cellObj.symbol.includes('GOLD')) && (a.symbol.includes('XAU') || a.symbol.includes('GOLD'))) return true;
+            if (cellObj.symbol.includes('BTC') && a.symbol.includes('BTC')) return true;
+            return false;
+        });
         if (alerts.length === 0) return null;
 
         const canvasW = (cellObj.vpCanvas && cellObj.vpCanvas.width) || (cellObj.container ? cellObj.container.clientWidth : 800);
@@ -5562,7 +5588,8 @@ class ChartEngine {
 
     updateDrawingActionBarPosition(cell, drawing) {
         const bar = document.getElementById('drawing-action-bar');
-        if (!bar || !bar.classList.contains('visible') || !cell || !cell.container || !drawing) return;
+        if (!bar || !bar.classList.contains('visible') || !cell || (!cell.container && !cell.element) || !drawing) return;
+        if (!cell.container && cell.element) cell.container = cell.element;
         const pt = drawing.points ? drawing.points[0] : null;
         if (!pt) return;
 
@@ -5641,7 +5668,9 @@ class ChartEngine {
             const p2 = toScreen(d.points[2]);
             const rightX = Math.max(p0.x, p1.x);
             const topY = Math.min(p0.y, p1.y, p2.y);
-            return { x: rightX + 12, y: topY - 10, r: 9 };
+            const safeX = Math.max(50, Math.min(canvasW - 24, rightX - 14));
+            const safeY = Math.max(30, Math.min(canvasH - 30, topY + 14));
+            return { x: safeX, y: safeY, r: 10 };
         }
         if (d.type === 'path' && d.points.length >= 2) {
             const lastPt = d.points[d.points.length - 1];
@@ -5691,9 +5720,9 @@ class ChartEngine {
 
         for (let i = cell.drawings.length - 1; i >= 0; i--) {
             const d = cell.drawings[i];
-            if (!d || !d.selected || !d.points || d.points.length === 0) continue;
+            if (!d || !d.points || d.points.length === 0) continue;
             const btn = this.getDrawingDeleteBtnPos(d, cell, toScreen, canvasW, canvasH);
-            if (btn && Math.hypot(px - btn.x, py - btn.y) <= btn.r + 6) {
+            if (btn && Math.hypot(px - btn.x, py - btn.y) <= btn.r + 8) {
                 return { type: 'DELETE_DRAWING', cellIndex: cell.index, drawingId: d.id, drawing: d };
             }
         }
@@ -5878,7 +5907,13 @@ class ChartEngine {
         const decimals = isGold ? 3 : (isForex ? 5 : 2);
 
         // 0. วาดเส้นแจ้งเตือนราคา (Price Alerts)
-        const alerts = this.priceAlerts[cell.symbol] || [];
+        const alerts = (this.priceAlerts || []).filter(a => {
+            if (!a || !a.symbol) return false;
+            if (a.symbol === cell.symbol) return true;
+            if ((cell.symbol.includes('XAU') || cell.symbol.includes('GOLD')) && (a.symbol.includes('XAU') || a.symbol.includes('GOLD'))) return true;
+            if (cell.symbol.includes('BTC') && a.symbol.includes('BTC')) return true;
+            return false;
+        });
         if (alerts.length > 0) {
             alerts.forEach(alert => {
                 let y = cell.candleSeries ? cell.candleSeries.priceToCoordinate(alert.price) : null;
@@ -6369,8 +6404,9 @@ class ChartEngine {
                 ctx.fillText(textStr, boxX + 9, boxY + boxH / 2);
             }
 
-            // 8. ปุ่ม [✕] สำหรับลบภาพวาดอิสระเมื่อเครื่องมือนั้น Active อยู่
-            if (isSelected && !isPreview) {
+            // 8. ปุ่ม [✕] สำหรับลบภาพวาดอิสระเมื่อเครื่องมือนั้น Active อยู่ หรือกล่อง Position
+            const shouldShowDeleteBtn = (isSelected && !isPreview) || (!isPreview && (d.type === 'long_position' || d.type === 'short_position'));
+            if (shouldShowDeleteBtn) {
                 const btn = this.getDrawingDeleteBtnPos(d, cell, toScreen, canvasW, canvasH);
                 if (btn) {
                     ctx.save();

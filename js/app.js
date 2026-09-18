@@ -2383,9 +2383,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // คีย์ลัด Alt + R สำหรับรีเซ็ตสเกลกราฟที่กำลัง Active, Esc สำหรับออกจาก Display Mode
+    // คีย์ลัด Alt + R สำหรับรีเซ็ตสเกลกราฟ, Delete/Backspace ลบภาพวาด, Esc สำหรับออกจาก Display Mode
     window.addEventListener('keydown', (e) => {
-        if (e.altKey && (e.key === 'r' || e.key === 'R')) {
+        if ((e.key === 'Delete' || e.key === 'Backspace') && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
+            if (window.chartEngine && typeof window.chartEngine.deleteSelectedDrawing === 'function') {
+                const hasSelected = window.chartEngine.charts && window.chartEngine.charts.some(c => c && c.selectedDrawingId);
+                if (hasSelected) {
+                    e.preventDefault();
+                    window.chartEngine.deleteSelectedDrawing();
+                }
+            }
+        } else if (e.altKey && (e.key === 'r' || e.key === 'R')) {
             e.preventDefault();
             const active = chartEngine.getActiveChart();
             if (active) {
