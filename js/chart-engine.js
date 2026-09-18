@@ -239,7 +239,19 @@ class ChartEngine {
                 isRangeBar: c.isRangeBar,
                 rangeSize: c.rangeSize,
                 isTickBar: c.isTickBar,
-                ticksPerBar: c.ticksPerBar
+                ticksPerBar: c.ticksPerBar,
+                indicators: (c.indicators || []).map(ind => ({
+                    id: ind.id,
+                    type: ind.type,
+                    period: ind.period,
+                    step: ind.step,
+                    max: ind.max,
+                    color: ind.color,
+                    lineWidth: ind.lineWidth,
+                    lineStyle: ind.lineStyle,
+                    parentIndicatorId: ind.parentIndicatorId || null,
+                    title: ind.title
+                }))
             }));
             localStorage.setItem('tradingtools_chart_configs', JSON.stringify(configs));
         } catch (e) {
@@ -265,7 +277,19 @@ class ChartEngine {
                     isRangeBar: c.isRangeBar,
                     rangeSize: c.rangeSize,
                     isTickBar: c.isTickBar,
-                    ticksPerBar: c.ticksPerBar
+                    ticksPerBar: c.ticksPerBar,
+                    indicators: (c.indicators || []).map(ind => ({
+                        id: ind.id,
+                        type: ind.type,
+                        period: ind.period,
+                        step: ind.step,
+                        max: ind.max,
+                        color: ind.color,
+                        lineWidth: ind.lineWidth,
+                        lineStyle: ind.lineStyle,
+                        parentIndicatorId: ind.parentIndicatorId || null,
+                        title: ind.title
+                    }))
                 };
                 // อัปเดต defaultConfigs ตามดัชนีที่ตรงกัน หรือเพิ่มใหม่
                 if (idx < this.defaultConfigs.length) {
@@ -611,11 +635,7 @@ class ChartEngine {
             chart,
             candleSeries,
             volumeSeries,
-            indicators: initialConfig.indicators || [
-                { id: 'ema_20', type: 'ema', period: 20, color: '#3b82f6', lineWidth: 1.5 },
-                { id: 'ema_50', type: 'ema', period: 50, color: '#f59e0b', lineWidth: 1.5 },
-                { id: 'ema_200', type: 'ema', period: 200, color: '#ef4444', lineWidth: 1.5 }
-            ],
+            indicators: [],
             indicatorSeries: new Map(),
             showVolume: isVolActive,
             showVolumeProfile: isVpActive,
@@ -635,6 +655,15 @@ class ChartEngine {
         };
 
         this.charts.push(cellObj);
+
+        // คืนค่า Indicators ที่บันทึกไว้ใน localStorage หรือ Snapshot
+        if (Array.isArray(initialConfig.indicators) && initialConfig.indicators.length > 0) {
+            for (const indCfg of initialConfig.indicators) {
+                if (indCfg && indCfg.type) {
+                    this.addIndicator(index, indCfg, true /* silent */, true /* skipSave */);
+                }
+            }
+        }
 
         // ซิงค์การวาด Overlays เมื่อมีการ Pan, Zoom, หรือ Scale กราฟ
         chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
@@ -3209,11 +3238,12 @@ class ChartEngine {
     // ==========================================
     // Indicator & "Indicator on Indicator" Engine
     // ==========================================
-    addIndicator(cellIndex, indicatorConfig) {
+    addIndicator(cellIndex, indicatorConfig, silent = false, skipSave = false) {
         const cell = this.charts[cellIndex];
         if (!cell) return;
         if (!cell.indicators) cell.indicators = [];
 
+        const indType = (indicatorConfig.type || '').toUpperCase();
         const parentId = indicatorConfig.parentIndicatorId || null;
         const lineStyleMap = {
             'solid': (window.LightweightCharts && window.LightweightCharts.LineStyle) ? window.LightweightCharts.LineStyle.Solid : 0,
@@ -3222,18 +3252,18 @@ class ChartEngine {
             'large_dashed': (window.LightweightCharts && window.LightweightCharts.LineStyle) ? window.LightweightCharts.LineStyle.LargeDashed : 3
         };
 
-        const isPSAR = (indicatorConfig.type === 'PSAR' || indicatorConfig.type === 'SAR');
+        const isPSAR = (indType === 'PSAR' || indType === 'SAR');
         const stepVal = parseFloat(indicatorConfig.step) || 0.02;
         const maxVal = parseFloat(indicatorConfig.max) || 0.20;
 
         const resolvedStyle = typeof indicatorConfig.lineStyle === 'number' ? indicatorConfig.lineStyle : (lineStyleMap[indicatorConfig.lineStyle] !== undefined ? lineStyleMap[indicatorConfig.lineStyle] : (isPSAR ? 1 : 0));
         const resolvedWidth = parseInt(indicatorConfig.lineWidth) || 1;
-        const resolvedColor = indicatorConfig.color || (indicatorConfig.type === 'SMA' ? '#fb923c' : (indicatorConfig.type === 'EMA' ? '#38bdf8' : (isPSAR ? '#34d399' : '#c084fc')));
-        const resolvedTitle = indicatorConfig.title || (isPSAR ? `PSAR (${stepVal}, ${maxVal})` : `${indicatorConfig.type} (${indicatorConfig.period})`);
+        const resolvedColor = indicatorConfig.color || (indType === 'SMA' ? '#fb923c' : (indType === 'EMA' ? '#38bdf8' : (isPSAR ? '#34d399' : '#c084fc')));
+        const resolvedTitle = indicatorConfig.title || (isPSAR ? `PSAR (${stepVal}, ${maxVal})` : `${indType} (${indicatorConfig.period || 14})`);
 
         // ตรวจสอบว่ามี Indicator ค่าเดิมอยู่แล้วหรือไม่ (ถ้ามีค่าเดิม ให้ปรับแต่งของเดิม ไม่เพิ่มซ้ำ)
         const existing = cell.indicators.find(i => 
-            i.type === indicatorConfig.type && 
+            (i.type || '').toUpperCase() === indType && 
             (isPSAR ? (i.step === stepVal && i.max === maxVal) : i.period === indicatorConfig.period) && 
             (i.parentIndicatorId || null) === parentId
         );
@@ -3263,22 +3293,36 @@ class ChartEngine {
                 existing.series.applyOptions(updateOpts);
             }
             this.recalculateIndicators(cell);
-            if (this.showToast) {
+            if (!skipSave) this.saveSettingsToStorage();
+            if (!silent && this.showToast) {
                 this.showToast(`⚙️ ปรับแต่งเส้น ${resolvedTitle} แล้ว (ไม่ออกซ้ำ)`);
             }
             return existing.id;
         }
 
-        const indId = 'IND_' + Date.now();
+        const indId = indicatorConfig.id || ('IND_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5));
         let series = null;
 
-        if (indicatorConfig.type === 'SMA' || indicatorConfig.type === 'EMA') {
-            series = cell.chart.addLineSeries({
+        // ถ้าเป็น Child Indicator ที่ซ้อนบน RSI ให้จัด scaleId 'rsi' ให้อยู่โซนล่าง
+        let targetPriceScaleId = undefined;
+        if (indType === 'RSI') {
+            targetPriceScaleId = 'rsi';
+        } else if (parentId) {
+            const parentInd = cell.indicators.find(i => i.id === parentId);
+            if (parentInd && (parentInd.type || '').toUpperCase() === 'RSI') {
+                targetPriceScaleId = 'rsi';
+            }
+        }
+
+        if (indType === 'SMA' || indType === 'EMA') {
+            const seriesOpts = {
                 color: resolvedColor,
                 lineWidth: resolvedWidth,
                 lineStyle: resolvedStyle,
                 title: resolvedTitle
-            });
+            };
+            if (targetPriceScaleId) seriesOpts.priceScaleId = targetPriceScaleId;
+            series = cell.chart.addLineSeries(seriesOpts);
         } else if (isPSAR) {
             series = cell.chart.addLineSeries({
                 color: resolvedColor,
@@ -3289,7 +3333,7 @@ class ChartEngine {
                 title: resolvedTitle,
                 crosshairMarkerVisible: false
             });
-        } else if (indicatorConfig.type === 'RSI') {
+        } else if (indType === 'RSI') {
             series = cell.chart.addLineSeries({
                 color: resolvedColor,
                 lineWidth: resolvedWidth,
@@ -3302,7 +3346,7 @@ class ChartEngine {
         cell.indicators.push({
             id: indId,
             series,
-            type: indicatorConfig.type,
+            type: indType,
             period: indicatorConfig.period,
             step: stepVal,
             max: maxVal,
@@ -3314,7 +3358,8 @@ class ChartEngine {
         });
 
         this.recalculateIndicators(cell);
-        if (this.showToast) {
+        if (!skipSave) this.saveSettingsToStorage();
+        if (!silent && this.showToast) {
             this.showToast(`✓ เพิ่ม ${resolvedTitle} บนชาร์ตที่ ${cellIndex + 1} แล้ว`);
         }
         return indId;
@@ -3368,6 +3413,7 @@ class ChartEngine {
         }
 
         this.recalculateIndicators(cell);
+        this.saveSettingsToStorage();
         if (this.showToast) {
             this.showToast(`⚙️ บันทึกการแก้ไข ${ind.title} แล้ว`);
         }
@@ -3405,6 +3451,7 @@ class ChartEngine {
 
         cell.indicators = cell.indicators.filter(i => i.id !== indicatorId && i.parentIndicatorId !== indicatorId);
         this.recalculateIndicators(cell);
+        this.saveSettingsToStorage();
 
         if (this.showToast) {
             this.showToast(`🗑️ ลบอินดิเคเตอร์ ${ind.title || ind.type} ออกจากชาร์ตแล้ว`);
@@ -3420,7 +3467,7 @@ class ChartEngine {
         if (!candles || candles.length === 0) return;
 
         // ปรับแต่ง Scale Margins ให้กับ RSI เพื่อให้อยู่โซนล่างและไม่ชนกับ Candlesticks
-        const hasRSI = cell.indicators.some(i => i.type === 'RSI');
+        const hasRSI = cell.indicators.some(i => (i.type || '').toUpperCase() === 'RSI');
         if (hasRSI && cell.chart) {
             try {
                 cell.chart.priceScale('rsi').applyOptions({
@@ -3448,8 +3495,16 @@ class ChartEngine {
             } catch (e) {}
         }
 
-        for (const ind of cell.indicators) {
-            if (ind.type === 'SMA') {
+        // คำนวณ Parent Indicators ก่อน แล้วตามด้วย Child Indicators (Indicator on Indicator)
+        const sortedIndicators = [...cell.indicators].sort((a, b) => {
+            if (a.parentIndicatorId && !b.parentIndicatorId) return 1;
+            if (!a.parentIndicatorId && b.parentIndicatorId) return -1;
+            return 0;
+        });
+
+        for (const ind of sortedIndicators) {
+            const type = (ind.type || '').toUpperCase();
+            if (type === 'SMA') {
                 let sourceData = candles;
                 // ถ้าเป็น Indicator on Indicator ให้ดึงข้อมูลจาก Parent Indicator
                 if (ind.parentIndicatorId) {
@@ -3461,15 +3516,15 @@ class ChartEngine {
                 const result = Indicators.calculateSMA(sourceData, ind.period || 14);
                 ind.cachedResult = result;
                 if (ind.series) ind.series.setData(result);
-            } else if (ind.type === 'EMA') {
+            } else if (type === 'EMA') {
                 const result = Indicators.calculateEMA(candles, ind.period || 14);
                 ind.cachedResult = result;
                 if (ind.series) ind.series.setData(result);
-            } else if (ind.type === 'RSI') {
+            } else if (type === 'RSI') {
                 const result = Indicators.calculateRSI(candles, ind.period || 14);
                 ind.cachedResult = result;
                 if (ind.series) ind.series.setData(result);
-            } else if (ind.type === 'PSAR' || ind.type === 'SAR') {
+            } else if (type === 'PSAR' || type === 'SAR') {
                 const result = Indicators.calculatePSAR(candles, ind.step || 0.02, ind.max || 0.20);
                 ind.cachedResult = result;
                 if (ind.series) ind.series.setData(result);
@@ -3501,7 +3556,7 @@ class ChartEngine {
         for (const cfg of preset.indicators) {
             let parentId = null;
             if (cfg.parentType && cell.indicators) {
-                const parent = cell.indicators.find(i => i.type === cfg.parentType);
+                const parent = cell.indicators.find(i => (i.type || '').toUpperCase() === (cfg.parentType || '').toUpperCase());
                 if (parent) parentId = parent.id;
             }
             this.addIndicator(cellIndex, {
@@ -3514,10 +3569,11 @@ class ChartEngine {
                 lineStyle: cfg.lineStyle || 'solid',
                 title: cfg.title,
                 parentIndicatorId: parentId
-            });
+            }, true /* silent */, true /* skipSave until end */);
         }
 
         this.recalculateIndicators(cell);
+        this.saveSettingsToStorage();
         this.showToast(`⚡ ใช้งาน Preset: ${preset.name} แล้ว`);
     }
 
@@ -3535,6 +3591,7 @@ class ChartEngine {
         }
         cell.indicators = [];
         this.recalculateIndicators(cell);
+        this.saveSettingsToStorage();
         this.showToast(`🧹 ล้างอินดิเคเตอร์ทั้งหมดบนชาร์ตที่ ${cellIndex + 1} แล้ว`);
     }
 
