@@ -35,6 +35,9 @@ mimetypes.add_type('application/javascript', '.js')
 
 sys.path.insert(0, BASE_DIR)
 from scripts.tradingview_feed import TradingViewWSFeed
+from scripts.market_intelligence import market_intel
+from scripts.smc_ict_analyzer import smc_analyzer
+from scripts.time_normalizer import normalize_timestamp, sanitize_and_deduplicate_candles
 import queue
 
 # In-Memory Cache for Live Ticks & Market Prices (Multi-Source Sync)
@@ -62,7 +65,7 @@ def broadcast_sse(event_type, data):
             SSE_CLIENTS.discard(d)
 
 def merge_and_persist_candles(sym, new_candles, max_len=120000, save_to_disk=True):
-    """Merge historical and fresh candles without dropping past history for backtesting (Up to 120,000 candles)."""
+    """Merge historical and fresh candles with time normalization and spike-free sanitization."""
     if not new_candles:
         return []
     with CANDLE_CACHE_LOCK:
@@ -76,10 +79,8 @@ def merge_and_persist_candles(sym, new_candles, max_len=120000, save_to_disk=Tru
                 except Exception:
                     existing = []
 
-        time_map = {c["time"]: c for c in existing}
-        for c in new_candles:
-            time_map[c["time"]] = c
-        merged = sorted(time_map.values(), key=lambda x: x["time"])
+        all_candles = existing + new_candles
+        merged = sanitize_and_deduplicate_candles(all_candles, symbol=sym)
         if len(merged) > max_len:
             merged = merged[-max_len:]
         CANDLE_CACHE[sym] = merged
@@ -292,20 +293,75 @@ class ProductionHandler(http.server.SimpleHTTPRequestHandler):
             with LIVE_RATES_LOCK:
                 rates_data = dict(LIVE_RATES_CACHE)
 
+            intel = market_intel.compute_intelligence(rates_data)
+            is_boost = MT5_ACTIVE and (time.time() - MT5_LAST_SEEN < 3)
+            payload = json.dumps({
+                "status": "ok",
+                "rates": rates_data,
+                "market_intel": intel,
+                "mt5_active": is_boost,
+                "server_time": int(time.time()),
+                "primary_source": "tradingview_institutional",
+                "realtime_boost": "mt5_turbo_active" if is_boost else "ready"
+            }).encode('utf-8')
+
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(payload)))
             self.send_header('Access-Control-Allow-Origin', '*')
             self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
             self.end_headers()
-            is_boost = MT5_ACTIVE and (time.time() - MT5_LAST_SEEN < 3)
-            self.wfile.write(json.dumps({
+            self.wfile.write(payload)
+            return
+
+        # API: Market Intelligence & Weekend Gap Analysis (Multi-Symbol Dynamic)
+        if path in ['/api/market-intelligence', '/api/weekend-analysis']:
+            qs = urllib.parse.parse_qs(parsed_url.query)
+            symbol = qs.get('symbol', ['XAUUSD'])[0].upper()
+            with LIVE_RATES_LOCK:
+                rates_data = dict(LIVE_RATES_CACHE)
+            intel = market_intel.compute_intelligence(rates_data, symbol=symbol)
+            payload = json.dumps({
                 "status": "ok",
-                "rates": rates_data,
-                "mt5_active": is_boost,
-                "server_time": int(time.time()),
-                "primary_source": "icmarkets_institutional",
-                "realtime_boost": "mt5_turbo_active" if is_boost else "ready"
-            }).encode('utf-8'))
+                "intelligence": intel
+            }).encode('utf-8')
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(payload)))
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            self.end_headers()
+            self.wfile.write(payload)
+            return
+
+        # API: SMC / ICT Trading Plan & Strategy Verdict
+        if path in ['/api/trading-plan', '/api/smc-analysis']:
+            qs = urllib.parse.parse_qs(parsed_url.query)
+            symbol = qs.get('symbol', ['XAUUSD'])[0].upper().replace('/', '').replace('-', '').replace('#', '').strip()
+            with LIVE_RATES_LOCK:
+                rates_data = dict(LIVE_RATES_CACHE)
+            in_mem_candles = []
+            with CANDLE_CACHE_LOCK:
+                if symbol in CANDLE_CACHE and CANDLE_CACHE[symbol]:
+                    in_mem_candles = CANDLE_CACHE[symbol][-600:]
+            plan = smc_analyzer.generate_trading_plans(symbol, rates_data, candles=in_mem_candles)
+
+            resp_dict = {"status": "ok"}
+            if isinstance(plan, dict):
+                resp_dict.update(plan)
+                resp_dict["plan"] = plan
+            else:
+                resp_dict["plan"] = plan
+            payload = json.dumps(resp_dict).encode('utf-8')
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(payload)))
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            self.end_headers()
+            self.wfile.write(payload)
             return
 
         # API: ส่งแท่งเทียน M1 สดล่าสุดจาก MT5 / RAM Cache (Zero-Lag Sync พร้อมประวัติเต็มย้อนหลังระดับโปร 50,000 - 100,000 แท่ง)
@@ -342,34 +398,40 @@ class ProductionHandler(http.server.SimpleHTTPRequestHandler):
             if count > 0 and len(candles) > count:
                 candles = candles[-count:]
 
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
-            self.end_headers()
-            self.wfile.write(json.dumps({
+            payload = json.dumps({
                 "status": "ok",
                 "symbol": symbol,
                 "candles": candles,
                 "server_time": int(time.time()),
                 "count": len(candles)
-            }).encode('utf-8'))
+            }).encode('utf-8')
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(payload)))
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            self.end_headers()
+            self.wfile.write(payload)
             return
 
         # API: สถานะระบบ (Health Check)
         if path == '/api/health':
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            self.wfile.write(json.dumps({
+            payload = json.dumps({
                 "status": "healthy",
                 "app": "TradingTools Workstation",
                 "domain": "trd.ssotansum.com",
                 "timestamp": int(time.time()),
                 "mt5_active": MT5_ACTIVE,
                 "cached_symbols": list(LIVE_RATES_CACHE.keys())
-            }).encode('utf-8'))
+            }).encode('utf-8')
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(payload)))
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(payload)
             return
 
         super().do_GET()
@@ -470,23 +532,35 @@ def public_market_price_poller():
                     merge_and_persist_candles("SOLUSD", sol_candles, max_len=10000, save_to_disk=True)
                     merge_and_persist_candles("SOLUSDT", sol_candles, max_len=10000, save_to_disk=True)
 
-                # 2.4 Gold Spot Backup (PAXGUSDT with Calibration Delta to Spot Gold)
+                # 2.4 Gold Spot Backup (PAXGUSDT 24/7 Live Gold Token)
                 paxg_candles = fetch_binance_klines("PAXGUSDT", count=1000, digits=2)
                 if paxg_candles:
-                    real_xau = None
-                    with LIVE_RATES_LOCK:
-                        if "XAUUSD" in LIVE_RATES_CACHE:
-                            real_xau = LIVE_RATES_CACHE["XAUUSD"].get("bid") or LIVE_RATES_CACHE["XAUUSD"].get("close")
-                    if real_xau and paxg_candles:
-                        last_paxg = paxg_candles[-1]["close"]
-                        delta = round(real_xau - last_paxg, 2)
-                        if abs(delta) > 0.05:
-                            for c in paxg_candles:
-                                c["open"] = round(c["open"] + delta, 2)
-                                c["high"] = round(c["high"] + delta, 2)
-                                c["low"] = round(c["low"] + delta, 2)
-                                c["close"] = round(c["close"] + delta, 2)
-                    merge_and_persist_candles("XAUUSD", paxg_candles, max_len=100000, save_to_disk=True)
+                    merge_and_persist_candles("PAXGUSDT", paxg_candles, max_len=20000, save_to_disk=True)
+                    merge_and_persist_candles("PAXGUSD", paxg_candles, max_len=20000, save_to_disk=True)
+                    merge_and_persist_candles("XAUUSD_WEEKEND", paxg_candles, max_len=20000, save_to_disk=True)
+
+                    # Only calibrate into XAUUSD if market is strictly OPEN and no primary feed
+                    m_status = market_intel.get_market_status()
+                    if m_status == "OPEN" and not is_mt5_live:
+                        real_xau = None
+                        with LIVE_RATES_LOCK:
+                            if "XAUUSD" in LIVE_RATES_CACHE and LIVE_RATES_CACHE["XAUUSD"].get("source") != "binance_live":
+                                real_xau = LIVE_RATES_CACHE["XAUUSD"].get("bid") or LIVE_RATES_CACHE["XAUUSD"].get("close")
+                        if real_xau and paxg_candles:
+                            last_paxg = paxg_candles[-1]["close"]
+                            delta = round(real_xau - last_paxg, 2)
+                            if abs(delta) > 0.05:
+                                cal_candles = []
+                                for c in paxg_candles:
+                                    cal_candles.append({
+                                        "time": c["time"],
+                                        "open": round(c["open"] + delta, 2),
+                                        "high": round(c["high"] + delta, 2),
+                                        "low": round(c["low"] + delta, 2),
+                                        "close": round(c["close"] + delta, 2),
+                                        "volume": c["volume"]
+                                    })
+                                merge_and_persist_candles("XAUUSD", cal_candles, max_len=100000, save_to_disk=True)
 
             # 3. Forex & Commodities Live Prices (Yahoo Finance Real Market Data)
             for target_sym, cfg in PUBLIC_SYMBOLS_MAP.items():
@@ -545,11 +619,32 @@ def public_market_price_poller():
         except Exception:
             time.sleep(2)
 
+def get_thailand_time_offset():
+    """Returns exact seconds offset from MT5 broker server time to Thailand Time (UTC+7)."""
+    month = datetime.datetime.now().month
+    # Summer (DST, UTC+3 -> UTC+7): +4 hours (+14,400s)
+    # Winter (UTC+2 -> UTC+7): +5 hours (+18,000s)
+    hours = 4 if 3 <= month <= 10 else 5
+    return hours * 3600
+
+def is_forex_market_open():
+    """Check if Forex/Spot Gold market is currently open (closed on weekends)."""
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    wd = now_utc.weekday()
+    h = now_utc.hour
+    if wd == 4 and h >= 21: # Friday night
+        return False
+    if wd == 5: # Saturday
+        return False
+    if wd == 6 and h < 21: # Sunday before open
+        return False
+    return True
+
 def mt5_candle_sync_worker():
-    """Sync closed M1 candles from MT5 directly into RAM CANDLE_CACHE & data/{symbol}_1m.json every 1.5 seconds."""
+    """Sync closed M1 candles from MT5 directly into RAM CANDLE_CACHE & data/{symbol}_1m.json."""
     global MT5_ACTIVE, MT5_LAST_SEEN
     while True:
-        time.sleep(1.5)
+        time.sleep(2.0)
         if not MT5_ACTIVE:
             continue
         try:
@@ -565,31 +660,29 @@ def mt5_candle_sync_worker():
             silv_sym = next((c for c in ['XAGUSD', 'SILVER', 'SILVERm#', 'XAGUSD#'] if c in all_symbols), None)
 
             sync_list = [
-                ("XAUUSD", gold_sym, 3),
-                ("BTCUSD", btc_sym, 2),
-                ("BTCUSDT", btc_sym, 2),
-                ("EURUSD", eur_sym, 5),
-                ("GBPUSD", gbp_sym, 5),
-                ("USDJPY", jpy_sym, 3),
-                ("ETHUSD", eth_sym, 2),
-                ("ETHUSDT", eth_sym, 2),
-                ("SOLUSD", sol_sym, 2),
-                ("SOLUSDT", sol_sym, 2),
-                ("XAGUSD", silv_sym, 3)
+                ("XAUUSD", gold_sym, 2, False),
+                ("BTCUSD", btc_sym, 2, True),
+                ("BTCUSDT", btc_sym, 2, True),
+                ("EURUSD", eur_sym, 5, False),
+                ("GBPUSD", gbp_sym, 5, False),
+                ("USDJPY", jpy_sym, 3, False),
+                ("ETHUSD", eth_sym, 2, True),
+                ("ETHUSDT", eth_sym, 2, True),
+                ("SOLUSD", sol_sym, 2, True),
+                ("SOLUSDT", sol_sym, 2, True),
+                ("XAGUSD", silv_sym, 2, False)
             ]
 
-            ref_sym = gold_sym or eur_sym or btc_sym
-            offset_sec = 4 * 3600
-            if ref_sym:
-                t = mt5.symbol_info_tick(ref_sym)
-                if t:
-                    local_thai_now = int(time.time()) + (7 * 3600)
-                    hours_diff = round((local_thai_now - t.time) / 3600)
-                    offset_sec = hours_diff * 3600
+            offset_sec = get_thailand_time_offset()
+            forex_open = is_forex_market_open()
 
-            for target_name, sym, digits in sync_list:
+            for target_name, sym, digits, is_crypto in sync_list:
                 if not sym: continue
-                rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M1, 0, 5000)
+                # Skip syncing closed markets on weekends to preserve pristine historical vault
+                if not is_crypto and not forex_open:
+                    continue
+
+                rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M1, 0, 500)
                 if rates is not None and len(rates) > 0:
                     candles = []
                     for r in rates:
@@ -608,7 +701,7 @@ def mt5_candle_sync_worker():
 
 
 def mt5_live_ticks_worker():
-    """Stream broker micro-ticks from MT5 to BOOST real-time chart precision."""
+    """Stream broker micro-ticks from MT5 to BOOST real-time chart precision during market open."""
     global MT5_ACTIVE, MT5_LAST_SEEN
     while True:
         try:
@@ -630,22 +723,27 @@ def mt5_live_ticks_worker():
             silv_sym = next((c for c in ['XAGUSD', 'SILVER', 'SILVERm#', 'XAGUSD#'] if c in all_symbols), None)
 
             mapping = [
-                ("XAUUSD", gold_sym, 3),
-                ("BTCUSD", btc_sym, 2),
-                ("BTCUSDT", btc_sym, 2),
-                ("EURUSD", eur_sym, 5),
-                ("GBPUSD", gbp_sym, 5),
-                ("USDJPY", jpy_sym, 3),
-                ("ETHUSD", eth_sym, 2),
-                ("ETHUSDT", eth_sym, 2),
-                ("SOLUSD", sol_sym, 2),
-                ("SOLUSDT", sol_sym, 2),
-                ("XAGUSD", silv_sym, 3)
+                ("XAUUSD", gold_sym, 2, False),
+                ("BTCUSD", btc_sym, 2, True),
+                ("BTCUSDT", btc_sym, 2, True),
+                ("EURUSD", eur_sym, 5, False),
+                ("GBPUSD", gbp_sym, 5, False),
+                ("USDJPY", jpy_sym, 3, False),
+                ("ETHUSD", eth_sym, 2, True),
+                ("ETHUSDT", eth_sym, 2, True),
+                ("SOLUSD", sol_sym, 2, True),
+                ("SOLUSDT", sol_sym, 2, True),
+                ("XAGUSD", silv_sym, 2, False)
             ]
 
             while True:
-                for target_name, sym, digits in mapping:
+                forex_open = is_forex_market_open()
+                for target_name, sym, digits, is_crypto in mapping:
                     if not sym: continue
+                    # Do NOT broadcast stale Friday ticks as live ticks during weekend for closed markets
+                    if not is_crypto and not forex_open:
+                        continue
+
                     tick = mt5.symbol_info_tick(sym)
                     if tick:
                         MT5_ACTIVE = True
@@ -667,7 +765,7 @@ def mt5_live_ticks_worker():
                             "source": "mt5_boost",
                             "time": int(time.time())
                         })
-                time.sleep(0.05)
+                time.sleep(0.08)
         except Exception:
             MT5_ACTIVE = False
             time.sleep(3)

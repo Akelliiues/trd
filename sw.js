@@ -3,17 +3,18 @@
  * ให้ความเร็วสูงสุดในการโหลดบนมือถือ/แท็บเล็ต พร้อมระบบ Offline Caching และ Auto Force Update
  */
 
-const CACHE_NAME = 'tradingtools-v2.6.1';
+const CACHE_NAME = 'tradingtools-v2.6.9';
 
 // ทรัพยากรหลักที่ต้อง Cache ทันทีที่ติดตั้ง (App Shell)
 const STATIC_ASSETS = [
     '/',
     '/index.html',
-    '/index.html?v=2.6.1',
-    '/styles.css?v=2.6.1',
-    '/manifest.json?v=2.6.1',
-    '/js/app.js?v=2.6.1',
-    '/js/chart-engine.js?v=2.6.1',
+    '/index.html?v=2.6.9',
+    '/styles.css?v=2.6.9',
+    '/manifest.json?v=2.6.9',
+    '/js/app.js?v=2.6.9',
+    '/js/chart-engine.js?v=2.6.9',
+    '/js/smc-ict-engine.js?v=2.6.9',
     '/js/indicators.js?v=2.6.1',
     '/js/lightweight-charts.js?v=2.6.1',
     '/js/replay-engine.js?v=2.6.1',

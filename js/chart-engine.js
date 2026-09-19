@@ -531,6 +531,9 @@ class ChartEngine {
                     <button class="cell-tool-btn" id="btn-cell-fibo-${index}" title="วาด Fibonacci Retracement บนชาร์ตนี้" onclick="window.app.toggleFibonacciTool(${index})">
                         <span style="font-weight:700;font-size:10px;color:#eab308;">FIB</span>
                     </button>
+                    <button class="cell-tool-btn" id="btn-cell-drawings-${index}" title="ซ่อน/แสดงภาพวาดและเครื่องมือทั้งหมดบนชาร์ตนี้" onclick="window.chartEngine.toggleHideDrawings(${index})">
+                        <svg class="svg-icon" id="svg-cell-drawings-${index}" viewBox="0 0 24 24" style="width:12px;height:12px;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
                     <button class="cell-tool-btn ${isVolActive ? 'active' : ''}" id="btn-vol-${index}" title="ปิด/เปิด Volume แท่งแนวตั้ง" onclick="window.app.toggleCellVolume(${index})">
                         <svg class="svg-icon" viewBox="0 0 24 24" style="width:12px;height:12px;"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
                     </button>
@@ -565,13 +568,12 @@ class ChartEngine {
             </div>
         `;
 
-        const activateCell = () => {
-            if (this.activeChartIndex !== index) {
-                this.setActiveChart(index);
-            }
+        const activateCell = (e) => {
+            this.setActiveChart(index, true);
         };
 
-        cellEl.addEventListener('click', activateCell);
+        cellEl.addEventListener('pointerdown', activateCell, true);
+        cellEl.addEventListener('click', activateCell, true);
         this.container.appendChild(cellEl);
 
         const viewport = cellEl.querySelector(`#chart-viewport-${index}`);
@@ -612,16 +614,9 @@ class ChartEngine {
             }
         });
 
-        // สลับ Active Chart ทันทีเมื่อคลิกหรือเลื่อนเคอร์เซอร์บนชาร์ต
+        // คลิกบนกราฟเพื่อเลือกเป็นชาร์ตเป้าหมายสำหรับเข้าเทรดทันที (Click-to-Activate Trading Chart)
         chart.subscribeClick(() => {
-            this.setActiveChart(index);
-        });
-        chart.subscribeCrosshairMove((param) => {
-            if (param && param.point) {
-                if (this.activeChartIndex !== index) {
-                    this.setActiveChart(index);
-                }
-            }
+            this.setActiveChart(index, true);
         });
 
         const candleSeries = chart.addCandlestickSeries({
@@ -668,7 +663,8 @@ class ChartEngine {
             orderLines: [],
             drawings: this.loadDrawings(initialConfig.symbol || symbol),
             currentDrawing: null,
-            selectedDrawingId: null
+            selectedDrawingId: null,
+            hideDrawings: false
         };
 
         this.charts.push(cellObj);
@@ -689,6 +685,9 @@ class ChartEngine {
         chart.timeScale().subscribeVisibleTimeRangeChange(() => {
             this.updateOverlays(cellObj);
         });
+        viewport.addEventListener('wheel', () => {
+            requestAnimationFrame(() => this.updateOverlays(cellObj));
+        }, { passive: true });
 
         // Resize Observer สำหรับ Canvas Overlay
         const resizeObserver = new ResizeObserver(entries => {
@@ -710,6 +709,11 @@ class ChartEngine {
         const handleContextMenu = (e) => {
             e.preventDefault();
             this.setActiveChart(index);
+            if (this.activeDrawingTool) {
+                this.setDrawingTool(null);
+                this.showToast('ยกเลิกเครื่องมือวาดแล้ว');
+                return;
+            }
             this.showContextMenu(e, index);
         };
         viewport.addEventListener('contextmenu', handleContextMenu);
@@ -754,11 +758,13 @@ class ChartEngine {
                 : (cellObj.resampledCandles && cellObj.resampledCandles.length > 0 ? cellObj.resampledCandles : (cellObj.rawM1 || []));
 
             let time = null;
+            let logical = null;
+            let logicalOffset = 0;
             if (cellObj.chart && cellObj.chart.timeScale) {
                 try {
                     const timeScale = cellObj.chart.timeScale();
                     if (typeof timeScale.coordinateToLogical === 'function') {
-                        const logical = timeScale.coordinateToLogical(x);
+                        logical = timeScale.coordinateToLogical(x);
                         if (logical !== null && typeof logical === 'number' && candles.length > 0) {
                             const idx = Math.round(logical);
                             if (idx >= 0 && idx < candles.length) {
@@ -770,6 +776,16 @@ class ChartEngine {
                                 const lastIdx = candles.length - 1;
                                 const step = (candles.length > 1) ? (candles[lastIdx].time - candles[lastIdx - 1].time) : 60;
                                 time = candles[lastIdx].time + (idx - lastIdx) * step;
+                            }
+
+                            if (time !== null && typeof timeScale.timeToCoordinate === 'function') {
+                                const candleX = timeScale.timeToCoordinate(time);
+                                if (candleX !== null) {
+                                    const baseLogical = timeScale.coordinateToLogical(candleX);
+                                    if (baseLogical !== null) {
+                                        logicalOffset = logical - baseLogical;
+                                    }
+                                }
                             }
                         }
                     }
@@ -817,7 +833,8 @@ class ChartEngine {
                 price = 2000;
             }
 
-            return { x, y, time, price };
+            const pressure = (e && typeof e.pressure === 'number' && e.pressure > 0) ? e.pressure : 0.5;
+            return { x, y, time, price, logical, logicalOffset, pressure };
         };
 
         // =========================================================
@@ -847,16 +864,24 @@ class ChartEngine {
             if (hitDeleteBtn) {
                 if (e.cancelable) e.preventDefault();
                 e.stopPropagation();
-                this.deleteDrawingById(cellObj.index, hitDeleteBtn.drawingId);
+                if (hitDeleteBtn.type === 'TOGGLE_LOCK') {
+                    this.toggleLockDrawing(cellObj.index, hitDeleteBtn.drawingId);
+                } else {
+                    this.deleteDrawingById(cellObj.index, hitDeleteBtn.drawingId);
+                }
                 return;
             }
 
             const hit = this.getOrderHitTest(cellObj, coords.x, coords.y);
 
-            // 0.1 ถ้าอยู่ในโหมดเครื่องมือวาด (Interactive Drawing Tool Mode)
+            // 0.1 ถ้าอยู่ในโหมดเครื่องมือวาด หรือโหมดยางลบ (Interactive Drawing / Eraser Mode)
             if (this.activeDrawingTool) {
                 if (e.cancelable) e.preventDefault();
                 e.stopPropagation();
+                if (this.activeDrawingTool === 'eraser') {
+                    this.handleDrawingPointerDown(cellObj, coords);
+                    return;
+                }
                 if (coords.time !== null && coords.price !== null) {
                     this.handleDrawingPointerDown(cellObj, coords);
                 }
@@ -913,6 +938,10 @@ class ChartEngine {
                 e.stopPropagation();
                 if (coords.time === null || coords.price === null) return;
 
+                if (cellObj.hideDrawings) {
+                    this.toggleHideDrawings(cellObj.index);
+                }
+
                 if (!cellObj.fiboPhase || cellObj.fiboPhase === 'idle' || cellObj.fiboPhase === 'pinned') {
                     cellObj.fiboStart = { ...coords };
                     cellObj.fiboCurrent = { ...coords };
@@ -938,6 +967,10 @@ class ChartEngine {
                 if (e.cancelable) e.preventDefault();
                 e.stopPropagation();
                 if (coords.time === null || coords.price === null) return;
+
+                if (cellObj.hideDrawings) {
+                    this.toggleHideDrawings(cellObj.index);
+                }
 
                 if (!cellObj.measurePhase || cellObj.measurePhase === 'idle' || cellObj.measurePhase === 'pinned') {
                     cellObj.measureStart = { ...coords };
@@ -1062,13 +1095,30 @@ class ChartEngine {
                         const isDoubleClick = (cellObj.selectedDrawingId === hitDrawing.id && (now - (cellObj.lastDrawingClickTime || 0)) < 350);
                         cellObj.lastDrawingClickTime = now;
 
-                        if (isDoubleClick && hitDrawing.type === 'text') {
-                            this.editTextDrawing(cellObj.index, hitDrawing.id);
-                            return;
+                        if (isDoubleClick) {
+                            if (hitDrawing.locked) {
+                                this.showToast(`🔒 ${this.getToolDisplayName(hitDrawing.type)} ถูกล็อคไว้ ไม่สามารถแก้ไขได้`);
+                                return;
+                            }
+                            if (hitDrawing.type === 'text') {
+                                this.editTextDrawing(cellObj.index, hitDrawing.id);
+                                return;
+                            } else if (hitDrawing.type === 'trendline' || hitDrawing.type === 'arrow') {
+                                this.promptLineText(cellObj.index, hitDrawing.id);
+                                return;
+                            }
                         }
 
                         cellObj.selectedDrawingId = hitDrawing.id;
                         cellObj.drawings.forEach(d => d.selected = (d.id === hitDrawing.id));
+                        this.updateOverlays(cellObj);
+
+                        if (hitDrawing.locked) {
+                            this.showDrawingActionBar(cellObj, hitDrawing);
+                            viewport.style.cursor = 'not-allowed';
+                            this.showToast(`🔒 ${this.getToolDisplayName(hitDrawing.type)} ถูกล็อคตำแหน่งไว้ (ปลดล็อคที่แถบเครื่องมือเพื่อย้ายหรือลบ)`);
+                            return;
+                        }
 
                         // คำนวณตำแหน่ง Anchor Point บนหน้าจอ เพื่อให้การลากนิ่ง ไม่กระโดด
                         let anchorScreenX = coords.x;
@@ -1080,7 +1130,7 @@ class ChartEngine {
                             if (sy !== null) anchorScreenY = sy;
                         }
 
-                        // ปิดการ scroll/scale ของ chart ชั่วคราว เพื่อไม่ให้กราฟเลื่อนตามขณะกำลังลากข้อความ
+                        // ปิดการ scroll/scale ของ chart ชั่วคราว เพื่อไม่ให้กราฟเลื่อนตามขณะกำลังลากภาพวาด
                         if (cellObj.chart && cellObj.chart.applyOptions) {
                             cellObj.chart.applyOptions({
                                 handleScroll: false,
@@ -1088,11 +1138,37 @@ class ChartEngine {
                             });
                         }
 
-                        // ตรวจสอบ Handle ของ Long & Short Position (TP, SL, Time Edge, Move)
                         let dragHandle = 'move';
                         let dragCursor = 'move';
-                        if ((hitDrawing.type === 'long_position' || hitDrawing.type === 'short_position') && hitDrawing.points && hitDrawing.points.length >= 3) {
-                            const canvasW = (cellObj.vpCanvas && cellObj.vpCanvas.width) || (cellObj.container ? cellObj.container.clientWidth : 800);
+                        const canvasW = (cellObj.vpCanvas && cellObj.vpCanvas.width) || (cellObj.container ? cellObj.container.clientWidth : 800);
+
+                        // ตรวจสอบ Handle ของ Trendline & Arrow (จุด A หรือ จุด B หรือ ย้ายทั้งเส้น)
+                        if ((hitDrawing.type === 'trendline' || hitDrawing.type === 'arrow') && hitDrawing.points && hitDrawing.points.length >= 2) {
+                            const p0 = this.drawingCoordToScreen(cellObj, hitDrawing.points[0], canvasW);
+                            const p1 = this.drawingCoordToScreen(cellObj, hitDrawing.points[1], canvasW);
+                            const distA = Math.hypot(coords.x - p0.x, coords.y - p0.y);
+                            const distB = Math.hypot(coords.x - p1.x, coords.y - p1.y);
+
+                            if (distA <= 18) {
+                                dragHandle = 'handle_a';
+                                dragCursor = 'crosshair';
+                            } else if (distB <= 18) {
+                                dragHandle = 'handle_b';
+                                dragCursor = 'crosshair';
+                            } else {
+                                dragHandle = 'move';
+                                dragCursor = 'move';
+                            }
+                        }
+
+                        // ปากกาวาดอิสระ (Pen Freehand Tool): เลือกเส้นเพื่อให้แสดงปุ่ม [✕] และแถบเครื่องมือลบ/เปลี่ยนสี
+                        else if (hitDrawing.type === 'pen') {
+                            dragHandle = 'none';
+                            dragCursor = 'default';
+                        }
+
+                        // ตรวจสอบ Handle ของ Long & Short Position (TP, SL, Time Edge, Move)
+                        else if ((hitDrawing.type === 'long_position' || hitDrawing.type === 'short_position') && hitDrawing.points && hitDrawing.points.length >= 3) {
                             const p0 = this.drawingCoordToScreen(cellObj, hitDrawing.points[0], canvasW);
                             const p1 = this.drawingCoordToScreen(cellObj, hitDrawing.points[1], canvasW);
                             const p2 = this.drawingCoordToScreen(cellObj, hitDrawing.points[2], canvasW);
@@ -1121,7 +1197,7 @@ class ChartEngine {
                             }
                         }
 
-                        // เริ่มระบบ Drag & Move ย้ายตำแหน่งภาพวาด
+                        // เริ่มระบบ Drag & Move ย้าย/ปรับตำแหน่งภาพวาด
                         cellObj.activeDrawingDrag = {
                             drawingId: hitDrawing.id,
                             drawing: hitDrawing,
@@ -1135,15 +1211,27 @@ class ChartEngine {
                         };
                         viewport.style.cursor = dragCursor;
                         this.showDrawingActionBar(cellObj, hitDrawing);
-                        this.updateOverlays(cellObj);
-                        if (dragHandle === 'tp') {
+                        const isDblClick = hitDrawing.lastClickTime && (now - hitDrawing.lastClickTime < 340);
+                        hitDrawing.lastClickTime = now;
+                        if (isDblClick && (hitDrawing.type === 'trendline' || hitDrawing.type === 'arrow' || hitDrawing.type === 'horzline' || hitDrawing.type === 'horzray' || hitDrawing.type === 'vertline' || hitDrawing.type === 'path')) {
+                            this.promptLineText(cellObj.index, hitDrawing.id);
+                            return;
+                        }
+
+                        if (hitDrawing.type === 'pen') {
+                            this.showToast('🖊️ เลือกภาพวาดปากกา (แตะ [✕] หรือกดปุ่มลบเพื่อลบ)');
+                        } else if (dragHandle === 'handle_a') {
+                            this.showToast('📍 กำลังปรับจุด A (จุดเริ่มต้น)');
+                        } else if (dragHandle === 'handle_b') {
+                            this.showToast('📍 กำลังปรับจุด B (จุดปลาย/หัวลูกศร)');
+                        } else if (dragHandle === 'tp') {
                             this.showToast('🎯 ปรับระดับเป้าหมาย Take Profit (TP)');
                         } else if (dragHandle === 'sl') {
                             this.showToast('🛑 ปรับระดับความเสี่ยง Stop Loss (SL)');
                         } else if (dragHandle === 'edge') {
                             this.showToast('↔ ปรับความกว้าง/ระยะเวลาของกล่อง');
                         } else {
-                            this.showToast(`📌 เลือก ${this.getToolDisplayName(hitDrawing.type)} (ลากเส้น TP/SL เพื่อปรับ R:R | ลากเพื่อย้าย)`);
+                            this.showToast(`📌 เลือก ${this.getToolDisplayName(hitDrawing.type)} (ลากเพื่อย้าย | ดับเบิ้ลคลิกใส่ข้อความ)`);
                         }
                         return;
                     } else if (cellObj.selectedDrawingId) {
@@ -1202,7 +1290,7 @@ class ChartEngine {
                 return;
             }
 
-            // A2. กำลังลากย้ายภาพวาด (Drawing Drag/Move)
+            // A2. กำลังลากย้าย/ปรับแต่งภาพวาด (Drawing Drag / Resize / Handle Move)
             if (cellObj.activeDrawingDrag) {
                 if (e.cancelable) e.preventDefault();
                 const drag = cellObj.activeDrawingDrag;
@@ -1211,6 +1299,27 @@ class ChartEngine {
                 const dy = curMouseCoords.y - drag.startCoords.y;
                 if (Math.hypot(dx, dy) > 2) {
                     drag.isDragging = true;
+
+                    // 1. ปรับจุด A หรือจุด B ของ Trendline และ Arrow แยกอิสระ
+                    if ((drag.drawing.type === 'trendline' || drag.drawing.type === 'arrow') && (drag.dragHandle === 'handle_a' || drag.dragHandle === 'handle_b')) {
+                        if (curMouseCoords.time !== null && curMouseCoords.price !== null) {
+                            const isGold = cellObj.symbol.includes('XAU') || cellObj.symbol.includes('GOLD');
+                            const isForex = cellObj.symbol.includes('EUR') || cellObj.symbol.includes('GBP') || cellObj.symbol.includes('JPY') || cellObj.symbol.includes('AUD');
+                            const decimals = isGold ? 3 : (isForex ? 5 : 2);
+                            const safeP = Number(curMouseCoords.price.toFixed(decimals));
+
+                            if (drag.dragHandle === 'handle_a') {
+                                drag.drawing.points[0] = { time: curMouseCoords.time, price: safeP };
+                            } else {
+                                drag.drawing.points[1] = { time: curMouseCoords.time, price: safeP };
+                            }
+                            viewport.style.cursor = 'crosshair';
+                        }
+                        this.updateOverlays(cellObj);
+                        this.updateDrawingActionBarPosition(cellObj, drag.drawing);
+                        return;
+                    }
+
                     if (drag.drawing.type === 'long_position' || drag.drawing.type === 'short_position') {
                         const isGold = cellObj.symbol.includes('XAU') || cellObj.symbol.includes('GOLD');
                         const isForex = cellObj.symbol.includes('EUR') || cellObj.symbol.includes('GBP') || cellObj.symbol.includes('JPY') || cellObj.symbol.includes('AUD');
@@ -1290,8 +1399,8 @@ class ChartEngine {
                         }
                         this.updateOverlays(cellObj);
                         this.updateDrawingActionBarPosition(cellObj, drag.drawing);
-                    } else {
-                        // Multi-point drawings (trendline, rectangle, path)
+                    } else if (drag.drawing.type !== 'pen') {
+                        // Multi-point drawings (trendline, arrow, rectangle, path)
                         const startAnchor = drag.origPoints[0];
                         if (startAnchor) {
                             let startScreenX = drag.startCoords.x;
@@ -1346,7 +1455,30 @@ class ChartEngine {
                 return;
             }
 
-            // D. Drawing Tool Preview Move (Trendline, Rectangle, Path)
+            // D. Drawing Tool Preview Move (Trendline, Rectangle, Path) OR Eraser Sweep
+            if (this.activeDrawingTool === 'eraser' && this.isErasing) {
+                const rect = (cellObj.vpCanvas && cellObj.vpCanvas.getBoundingClientRect)
+                    ? cellObj.vpCanvas.getBoundingClientRect()
+                    : cellObj.container.getBoundingClientRect();
+                let clientX = e.clientX;
+                let clientY = e.clientY;
+                if (e.touches && e.touches.length > 0) {
+                    clientX = e.touches[0].clientX;
+                    clientY = e.touches[0].clientY;
+                } else if (e.changedTouches && e.changedTouches.length > 0) {
+                    clientX = e.changedTouches[0].clientX;
+                    clientY = e.changedTouches[0].clientY;
+                }
+                if (clientX !== undefined && clientY !== undefined) {
+                    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
+                        return;
+                    }
+                }
+                if (e.cancelable) e.preventDefault();
+                const coords = getChartCoords(e);
+                this.eraseAtPoint(cellObj, coords.x, coords.y);
+                return;
+            }
             if (cellObj.currentDrawing) {
                 if (e.cancelable) e.preventDefault();
                 const coords = getChartCoords(e);
@@ -1361,9 +1493,17 @@ class ChartEngine {
                 const coords = getChartCoords(e);
                 const hitDeleteBtn = this.getDrawingDeleteButtonHit(cellObj, coords.x, coords.y);
                 if (hitDeleteBtn) {
+                    if (cellObj.hoveredDeleteBtnId !== hitDeleteBtn.drawingId) {
+                        cellObj.hoveredDeleteBtnId = hitDeleteBtn.drawingId;
+                        this.updateOverlays(cellObj);
+                    }
                     viewport.style.cursor = 'pointer';
                     return;
+                } else if (cellObj.hoveredDeleteBtnId) {
+                    cellObj.hoveredDeleteBtnId = null;
+                    this.updateOverlays(cellObj);
                 }
+
                 const hit = this.getOrderHitTest(cellObj, coords.x, coords.y);
                 if (hit) {
                     if (hit.type === 'DELETE_TP' || hit.type === 'DELETE_SL' || hit.type === 'CLOSE_ORDER') {
@@ -1375,6 +1515,10 @@ class ChartEngine {
                 }
                 if (cellObj.selectedDrawingId) {
                     const selD = (cellObj.drawings || []).find(d => d.id === cellObj.selectedDrawingId);
+                    if (selD && selD.locked) {
+                        viewport.style.cursor = 'not-allowed';
+                        return;
+                    }
                     if (selD && (selD.type === 'long_position' || selD.type === 'short_position') && selD.points && selD.points.length >= 3) {
                         const canvasW = (cellObj.vpCanvas && cellObj.vpCanvas.width) || (cellObj.container ? cellObj.container.clientWidth : 800);
                         const p0 = this.drawingCoordToScreen(cellObj, selD.points[0], canvasW);
@@ -1407,6 +1551,10 @@ class ChartEngine {
         };
 
         const onGlobalPointerUp = (e) => {
+            if (this.activeDrawingTool === 'eraser') {
+                this.isErasing = false;
+            }
+
             // ปล่อยมือจากการลากย้ายภาพวาด
             if (cellObj.activeDrawingDrag) {
                 if (cellObj.activeDrawingDrag.isDragging) {
@@ -1490,7 +1638,7 @@ class ChartEngine {
             }
 
             // Drawing Tool Drag Release (Trendline, Rectangle)
-            if (cellObj.currentDrawing) {
+            if (this.activeDrawingTool && this.activeDrawingTool !== 'eraser' && cellObj.currentDrawing) {
                 const coords = getChartCoords(e);
                 this.handleDrawingPointerUp(cellObj, coords);
             }
@@ -1517,17 +1665,35 @@ class ChartEngine {
         return cellObj;
     }
 
-    setActiveChart(index) {
+    setActiveChart(index, notify = false) {
+        const prevIndex = this.activeChartIndex;
         this.activeChartIndex = index;
+        const activeCell = this.charts[index];
+
         this.charts.forEach((c, idx) => {
             if (c.element) {
                 c.element.classList.toggle('active', idx === index);
             }
         });
-        if (window.app && window.app.onActiveChartChanged) {
-            window.app.onActiveChartChanged(this.charts[index]);
+
+        if (activeCell) {
+            if (window.app && window.app.onActiveChartChanged) {
+                window.app.onActiveChartChanged(activeCell);
+            }
+            this.updateActiveTitlebarPrice(activeCell);
+
+            // กระตุ้น Pulse ไฮไลท์ที่การ์ดเป้าหมายใน Virtual Trade Pad
+            const padBar = document.getElementById('pad-active-symbol-bar');
+            if (padBar) {
+                padBar.classList.add('pad-pulse-active');
+                setTimeout(() => padBar.classList.remove('pad-pulse-active'), 500);
+            }
+
+            if (notify && prevIndex !== index) {
+                const tfStr = activeCell.isRangeBar ? `Range ${activeCell.rangeSize}` : (activeCell.isTickBar ? `Tick ${activeCell.ticksPerBar}` : (activeCell.timeframe || '15m').toUpperCase());
+                this.showToast(`🎯 เลือกชาร์ต ${index + 1}: ${activeCell.symbol} (${tfStr}) สำหรับเข้าเทรด`);
+            }
         }
-        this.updateActiveTitlebarPrice(this.charts[index]);
     }
 
     getActiveChart() {
@@ -1589,6 +1755,57 @@ class ChartEngine {
 
         // Browser Tab Title (document.title) สไตล์ TradingView
         document.title = `${sym} ${arrow} ${formattedPrice}${changePercentStr ? ' ' + changePercentStr : ''} — TradingTools`;
+
+        // Update Virtual Trade Pad Active Symbol & Real-Time Live Price
+        this.updateTradePadActiveSymbol(cell, currentPrice, formattedPrice, dir, changePercentStr);
+    }
+
+    updateTradePadActiveSymbol(cell, currentPrice, formattedPrice, dir, changePercentStr) {
+        if (!cell) cell = this.getActiveChart();
+        if (!cell) return;
+
+        const symEl = document.getElementById('pad-active-sym-name');
+        const tfEl = document.getElementById('pad-active-sym-tf');
+        const priceEl = document.getElementById('pad-active-sym-price');
+        const arrowEl = document.getElementById('pad-active-sym-arrow');
+        const chgEl = document.getElementById('pad-active-sym-chg');
+        const chartTagEl = document.getElementById('pad-active-chart-tag');
+
+        if (symEl) symEl.innerText = cell.symbol || 'XAUUSD';
+        if (chartTagEl) chartTagEl.innerText = `CH ${(cell.index !== undefined ? cell.index : 0) + 1}`;
+
+        if (tfEl) {
+            if (cell.isRangeBar) {
+                tfEl.innerText = `R-${cell.rangeSize || 2}`;
+            } else if (cell.isTickBar) {
+                tfEl.innerText = `T-${cell.ticksPerBar || 250}`;
+            } else {
+                tfEl.innerText = (cell.timeframe || '15m').toUpperCase();
+            }
+        }
+
+        if (priceEl && formattedPrice) {
+            priceEl.innerText = formattedPrice;
+            priceEl.classList.remove('up', 'down');
+            priceEl.classList.add(dir === 'up' ? 'up' : 'down');
+        }
+
+        if (arrowEl) {
+            arrowEl.innerText = dir === 'up' ? '▲' : '▼';
+            arrowEl.classList.remove('up', 'down');
+            arrowEl.classList.add(dir === 'up' ? 'up' : 'down');
+        }
+
+        if (chgEl) {
+            if (changePercentStr) {
+                chgEl.innerText = changePercentStr;
+                const isPos = changePercentStr.startsWith('+');
+                chgEl.className = `pad-sym-chg ${isPos ? 'pos' : 'neg'}`;
+                chgEl.style.display = 'inline-block';
+            } else {
+                chgEl.style.display = 'none';
+            }
+        }
     }
 
     /**
@@ -1721,6 +1938,9 @@ class ChartEngine {
         await this.loadChartData(cell);
         this.redrawAllOrders();
         this.saveSettingsToStorage();
+        if (window.app && window.app.onActiveChartChanged) {
+            window.app.onActiveChartChanged(cell);
+        }
     }
 
     /**
@@ -1807,7 +2027,7 @@ class ChartEngine {
 
         // 4. Price & Bar Measure Tool (เครื่องมือวัดระยะ)
         const measureBadge = cell.element ? cell.element.querySelector(`#measure-badge-${cell.index}`) : null;
-        if (cell.measureStart && cell.measureCurrent) {
+        if (!cell.hideDrawings && cell.measureStart && cell.measureCurrent) {
             this.renderMeasurementOverlay(cell, ctx);
             if (measureBadge) measureBadge.style.display = 'flex';
         } else {
@@ -1816,7 +2036,7 @@ class ChartEngine {
 
         // 5. Fibonacci Retracement Tool (เครื่องมือฟีโบนักชี)
         const fiboBadge = cell.element ? cell.element.querySelector(`#fibo-badge-${cell.index}`) : null;
-        if (cell.fiboStart && cell.fiboCurrent) {
+        if (!cell.hideDrawings && cell.fiboStart && cell.fiboCurrent) {
             this.renderFibonacciOverlay(cell, ctx);
             if (fiboBadge) fiboBadge.style.display = 'flex';
         } else {
@@ -4020,6 +4240,10 @@ class ChartEngine {
         }
 
         if (this.isMeasureActive) {
+            const activeCell = this.charts[this.activeChartIndex];
+            if (activeCell && activeCell.hideDrawings) {
+                this.toggleHideDrawings(this.activeChartIndex);
+            }
             this.showToast('📐 เปิดเครื่องมือวัดระยะ: แตะ/คลิกแล้วลากปล่อยเพื่อวัดจำนวนจุด, Pips, แท่ง และเวลา');
         }
     }
@@ -4053,59 +4277,118 @@ class ChartEngine {
         this.showToast(`🗑️ ลบการวัดระยะบนชาร์ตที่ ${cellIndex + 1} แล้ว`);
     }
 
+    // =========================================================
+    // Universal Continuous Coordinate Projection Engine (Zoom & Pan Invariant)
+    // =========================================================
+
+    findCandleIndex(candles, time) {
+        if (!candles || candles.length === 0) return 0;
+        const lastIdx = candles.length - 1;
+        if (time <= candles[0].time) {
+            const step = (candles.length > 1) ? (candles[1].time - candles[0].time) : 60;
+            return (step > 0) ? (time - candles[0].time) / step : 0;
+        }
+        if (time >= candles[lastIdx].time) {
+            const step = (candles.length > 1) ? (candles[lastIdx].time - candles[lastIdx - 1].time) : 60;
+            return lastIdx + ((step > 0) ? (time - candles[lastIdx].time) / step : 0);
+        }
+
+        let low = 0;
+        let high = lastIdx;
+        while (low <= high) {
+            const mid = (low + high) >> 1;
+            const midTime = candles[mid].time;
+            if (midTime === time) {
+                return mid;
+            }
+            if (midTime < time) {
+                low = mid + 1;
+            } else {
+                high = mid - 1;
+            }
+        }
+
+        const t0 = candles[high].time;
+        const t1 = candles[low].time;
+        const frac = (t1 > t0) ? (time - t0) / (t1 - t0) : 0;
+        return high + frac;
+    }
+
+    timeToScreenX(cell, time, logicalOffset, fallbackX, canvasW) {
+        if (!cell || !cell.chart) return fallbackX !== undefined ? fallbackX : 0;
+        const timeScale = (cell.chart && cell.chart.timeScale) ? cell.chart.timeScale() : null;
+        if (!timeScale) return fallbackX !== undefined ? fallbackX : 0;
+
+        // 1. Direct timeToCoordinate when visible on screen without subpixel offset
+        if ((logicalOffset === undefined || logicalOffset === 0) && time !== undefined && time !== null && typeof timeScale.timeToCoordinate === 'function') {
+            const directX = timeScale.timeToCoordinate(time);
+            if (directX !== null && !isNaN(directX)) {
+                return directX;
+            }
+        }
+
+        // 2. High-precision continuous logical mapping (works on-screen and off-screen at any zoom level)
+        const candles = (cell.visibleCandles && cell.visibleCandles.length > 0)
+            ? cell.visibleCandles
+            : (cell.resampledCandles && cell.resampledCandles.length > 0 ? cell.resampledCandles : (cell.rawM1 || []));
+
+        if (candles.length > 0 && typeof timeScale.logicalToCoordinate === 'function') {
+            let baseLogical = 0;
+            if (time !== undefined && time !== null) {
+                baseLogical = this.findCandleIndex(candles, time);
+            }
+            const totalLogical = baseLogical + (Number(logicalOffset) || 0);
+            const logicalX = timeScale.logicalToCoordinate(totalLogical);
+            if (logicalX !== null && !isNaN(logicalX)) {
+                return logicalX;
+            }
+        }
+
+        return fallbackX !== undefined ? fallbackX : (canvasW ? canvasW / 2 : 0);
+    }
+
+    priceToScreenY(cell, price, fallbackY, canvasH) {
+        if (!cell || !cell.candleSeries || price === undefined || price === null || isNaN(price)) {
+            return fallbackY !== undefined ? fallbackY : 50;
+        }
+        const h = canvasH || (cell.vpCanvas ? cell.vpCanvas.height : (cell.container ? cell.container.clientHeight : 400));
+
+        // 1. Direct priceToCoordinate
+        if (typeof cell.candleSeries.priceToCoordinate === 'function') {
+            const directY = cell.candleSeries.priceToCoordinate(price);
+            if (directY !== null && !isNaN(directY)) {
+                return directY;
+            }
+        }
+
+        // 2. Continuous linear projection when price is scrolled or zoomed off the vertical scale
+        if (typeof cell.candleSeries.coordinateToPrice === 'function') {
+            const pTop = cell.candleSeries.coordinateToPrice(10);
+            const pBottom = cell.candleSeries.coordinateToPrice(Math.max(20, h - 10));
+            if (pTop !== null && pBottom !== null && !isNaN(pTop) && !isNaN(pBottom) && pTop !== pBottom) {
+                const fraction = (pTop - price) / (pTop - pBottom);
+                const projectedY = 10 + fraction * (h - 20);
+                if (!isNaN(projectedY)) {
+                    return projectedY;
+                }
+            }
+        }
+
+        return fallbackY !== undefined ? fallbackY : 50;
+    }
+
     renderMeasurementOverlay(cell, ctx) {
         if (!cell.measureStart || !cell.measureCurrent) return;
         const start = cell.measureStart;
         const curr = cell.measureCurrent;
 
-        let x1 = cell.chart.timeScale().timeToCoordinate(start.time);
-        let y1 = cell.candleSeries.priceToCoordinate(start.price);
-        let x2 = cell.chart.timeScale().timeToCoordinate(curr.time);
-        let y2 = cell.candleSeries.priceToCoordinate(curr.price);
+        const canvasW = cell.vpCanvas ? cell.vpCanvas.width : 800;
+        const canvasH = cell.vpCanvas ? cell.vpCanvas.height : 400;
 
-        const canvasW = cell.vpCanvas.width;
-        const canvasH = cell.vpCanvas.height;
-
-        if (x1 === null) {
-            if (cell.visibleCandles && cell.visibleCandles.length > 0) {
-                const firstTime = cell.visibleCandles[0].time;
-                const lastTime = cell.visibleCandles[cell.visibleCandles.length - 1].time;
-                if (start.time < firstTime) x1 = -60;
-                else if (start.time > lastTime) x1 = canvasW + 60;
-                else {
-                    const firstX = cell.chart.timeScale().timeToCoordinate(firstTime) || 0;
-                    const lastX = cell.chart.timeScale().timeToCoordinate(lastTime) || canvasW;
-                    const progress = (start.time - firstTime) / (lastTime - firstTime || 1);
-                    x1 = firstX + progress * (lastX - firstX);
-                }
-            } else {
-                x1 = start.x !== undefined ? start.x : 0;
-            }
-        }
-
-        if (x2 === null) {
-            if (cell.visibleCandles && cell.visibleCandles.length > 0) {
-                const firstTime = cell.visibleCandles[0].time;
-                const lastTime = cell.visibleCandles[cell.visibleCandles.length - 1].time;
-                if (curr.time < firstTime) x2 = -60;
-                else if (curr.time > lastTime) x2 = canvasW + 60;
-                else {
-                    const firstX = cell.chart.timeScale().timeToCoordinate(firstTime) || 0;
-                    const lastX = cell.chart.timeScale().timeToCoordinate(lastTime) || canvasW;
-                    const progress = (curr.time - firstTime) / (lastTime - firstTime || 1);
-                    x2 = firstX + progress * (lastX - firstX);
-                }
-            } else {
-                x2 = curr.x !== undefined ? curr.x : canvasW;
-            }
-        }
-
-        if (y1 === null) {
-            y1 = start.y !== undefined ? start.y : 50;
-        }
-        if (y2 === null) {
-            y2 = curr.y !== undefined ? curr.y : canvasH - 50;
-        }
+        const x1 = this.timeToScreenX(cell, start.time, start.logicalOffset, start.x, canvasW);
+        const y1 = this.priceToScreenY(cell, start.price, start.y, canvasH);
+        const x2 = this.timeToScreenX(cell, curr.time, curr.logicalOffset, curr.x, canvasW);
+        const y2 = this.priceToScreenY(cell, curr.price, curr.y, canvasH);
 
         const minX = Math.min(x1, x2);
         const maxX = Math.max(x1, x2);
@@ -4125,10 +4408,13 @@ class ChartEngine {
         const points = Math.round(Math.abs(deltaPrice) * pointMultiplier);
         const pips = (points / 10).toFixed(1);
 
-        // คำนวณจำนวนแท่งและเวลาในช่วงที่วัด
+        // คำนวณจำนวนแท่งและเวลาในช่วงที่วัดจากชุดแท่งเทียนจริง เพื่อความถูกต้องคงที่เสมอไม่ว่าจะซูมเข้าหรือออก
         const minT = Math.min(start.time, curr.time);
         const maxT = Math.max(start.time, curr.time);
-        const barsInRange = (cell.visibleCandles || []).filter(c => c.time >= minT && c.time <= maxT);
+        const allCandles = (cell.resampledCandles && cell.resampledCandles.length > 0)
+            ? cell.resampledCandles
+            : (cell.visibleCandles && cell.visibleCandles.length > 0 ? cell.visibleCandles : (cell.rawM1 || []));
+        const barsInRange = allCandles.filter(c => c.time >= minT && c.time <= maxT);
         const barCount = Math.max(1, barsInRange.length);
         const totalVol = barsInRange.reduce((sum, b) => sum + (b.volume || 0), 0);
         const timeDiffSec = maxT - minT;
@@ -4175,6 +4461,7 @@ class ChartEngine {
 
         if (hudX + hudW > canvasW - 10) hudX = x2 - hudW - 12;
         if (hudX < 10) hudX = 10;
+        if (hudX + hudW > canvasW - 10) hudX = canvasW - hudW - 10;
         if (hudY < 10) hudY = 10;
         if (hudY + hudH > canvasH - 10) hudY = canvasH - hudH - 10;
 
@@ -4182,7 +4469,11 @@ class ChartEngine {
         ctx.strokeStyle = isBullish ? 'rgba(56, 189, 248, 0.7)' : 'rgba(239, 68, 68, 0.7)';
         ctx.lineWidth = 1.2;
         ctx.beginPath();
-        ctx.roundRect(hudX, hudY, hudW, hudH, 8);
+        if (typeof ctx.roundRect === 'function') {
+            ctx.roundRect(hudX, hudY, hudW, hudH, 8);
+        } else {
+            this.drawSafeRoundedRect(ctx, hudX, hudY, hudW, hudH, 8);
+        }
         ctx.fill();
         ctx.stroke();
 
@@ -4251,6 +4542,10 @@ class ChartEngine {
         }
 
         if (this.isFibonacciActive) {
+            const activeCell = this.charts[this.activeChartIndex];
+            if (activeCell && activeCell.hideDrawings) {
+                this.toggleHideDrawings(this.activeChartIndex);
+            }
             this.showToast('📐 เปิด Fibonacci Retracement: แตะ/คลิกจุด A (สวิง) แล้วลากปล่อยไปยังจุด B');
         }
     }
@@ -4289,54 +4584,13 @@ class ChartEngine {
         const start = cell.fiboStart;
         const curr = cell.fiboCurrent;
 
-        let x1 = cell.chart.timeScale().timeToCoordinate(start.time);
-        let y1 = cell.candleSeries.priceToCoordinate(start.price);
-        let x2 = cell.chart.timeScale().timeToCoordinate(curr.time);
-        let y2 = cell.candleSeries.priceToCoordinate(curr.price);
+        const canvasW = cell.vpCanvas ? cell.vpCanvas.width : 800;
+        const canvasH = cell.vpCanvas ? cell.vpCanvas.height : 400;
 
-        const canvasW = cell.vpCanvas.width;
-        const canvasH = cell.vpCanvas.height;
-
-        if (x1 === null) {
-            if (cell.visibleCandles && cell.visibleCandles.length > 0) {
-                const firstTime = cell.visibleCandles[0].time;
-                const lastTime = cell.visibleCandles[cell.visibleCandles.length - 1].time;
-                if (start.time < firstTime) x1 = -60;
-                else if (start.time > lastTime) x1 = canvasW + 60;
-                else {
-                    const firstX = cell.chart.timeScale().timeToCoordinate(firstTime) || 0;
-                    const lastX = cell.chart.timeScale().timeToCoordinate(lastTime) || canvasW;
-                    const progress = (start.time - firstTime) / (lastTime - firstTime || 1);
-                    x1 = firstX + progress * (lastX - firstX);
-                }
-            } else {
-                x1 = start.x !== undefined ? start.x : 0;
-            }
-        }
-
-        if (x2 === null) {
-            if (cell.visibleCandles && cell.visibleCandles.length > 0) {
-                const firstTime = cell.visibleCandles[0].time;
-                const lastTime = cell.visibleCandles[cell.visibleCandles.length - 1].time;
-                if (curr.time < firstTime) x2 = -60;
-                else if (curr.time > lastTime) x2 = canvasW + 60;
-                else {
-                    const firstX = cell.chart.timeScale().timeToCoordinate(firstTime) || 0;
-                    const lastX = cell.chart.timeScale().timeToCoordinate(lastTime) || canvasW;
-                    const progress = (curr.time - firstTime) / (lastTime - firstTime || 1);
-                    x2 = firstX + progress * (lastX - firstX);
-                }
-            } else {
-                x2 = curr.x !== undefined ? curr.x : canvasW;
-            }
-        }
-
-        if (y1 === null) {
-            y1 = start.y !== undefined ? start.y : 50;
-        }
-        if (y2 === null) {
-            y2 = curr.y !== undefined ? curr.y : canvasH - 50;
-        }
+        const x1 = this.timeToScreenX(cell, start.time, start.logicalOffset, start.x, canvasW);
+        const y1 = this.priceToScreenY(cell, start.price, start.y, canvasH);
+        const x2 = this.timeToScreenX(cell, curr.time, curr.logicalOffset, curr.x, canvasW);
+        const y2 = this.priceToScreenY(cell, curr.price, curr.y, canvasH);
 
         const p1 = start.price; // Anchor A (ราคาจุดเริ่ม)
         const p2 = curr.price;  // Anchor B (ราคาจุดปลาย)
@@ -4346,8 +4600,12 @@ class ChartEngine {
         const isForex = cell.symbol.includes('EUR') || cell.symbol.includes('GBP') || cell.symbol.includes('JPY') || cell.symbol.includes('AUD');
         const decimals = isGold ? 3 : (isForex ? 5 : 2);
 
-        const startX = Math.max(0, Math.min(x1, x2) - 20);
-        const endX = canvasW - 55;
+        // กำหนดขอบเขตความกว้างของเส้น Fibonacci
+        let startX = Math.min(x1, x2) - 20;
+        let endX = Math.max(x1, x2) + 60;
+        endX = Math.max(endX, canvasW - 55);
+        if (startX < 0) startX = 0;
+        if (endX <= startX) endX = startX + 50;
 
         // รายการระดับ Fibonacci มาตรฐานสากล
         const levels = [
@@ -4366,10 +4624,7 @@ class ChartEngine {
         // คำนวณราคาและพิกัด Y สำหรับทุกระดับตาม Realtime Candle Series Price Scale
         const calculatedLevels = levels.map(lvl => {
             const price = p2 - (diff * lvl.ratio);
-            let y = cell.candleSeries.priceToCoordinate(price);
-            if (y === null) {
-                y = y2 + (y1 - y2) * lvl.ratio;
-            }
+            const y = this.priceToScreenY(cell, price, null, canvasH);
             return { ...lvl, price, y };
         });
 
@@ -4377,31 +4632,36 @@ class ChartEngine {
         for (let i = 0; i < calculatedLevels.length - 2; i++) {
             const current = calculatedLevels[i];
             const next = calculatedLevels[i + 1];
-            if (current.y !== null && next.y !== null && current.bg) {
+            if (current.y !== null && next.y !== null && !isNaN(current.y) && !isNaN(next.y) && current.bg) {
                 const minY = Math.min(current.y, next.y);
                 const height = Math.abs(current.y - next.y);
-                ctx.fillStyle = current.bg;
-                ctx.fillRect(startX, minY, endX - startX, height);
+                if (minY + height >= 0 && minY <= canvasH) {
+                    ctx.fillStyle = current.bg;
+                    ctx.fillRect(startX, minY, endX - startX, height);
+                }
             }
         }
 
         // 2. ไฮไลท์โซนทองคำ (Golden Pocket Highlight: 0.500 - 0.618)
         const lvl500 = calculatedLevels.find(l => l.ratio === 0.500);
         const lvl618 = calculatedLevels.find(l => l.ratio === 0.618);
-        if (lvl500 && lvl618 && lvl500.y !== null && lvl618.y !== null) {
+        if (lvl500 && lvl618 && lvl500.y !== null && lvl618.y !== null && !isNaN(lvl500.y) && !isNaN(lvl618.y)) {
             const gpMinY = Math.min(lvl500.y, lvl618.y);
             const gpH = Math.abs(lvl500.y - lvl618.y);
-            ctx.fillStyle = 'rgba(34, 197, 94, 0.18)';
-            ctx.fillRect(startX, gpMinY, endX - startX, gpH);
-            ctx.strokeStyle = 'rgba(34, 197, 94, 0.5)';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(startX, gpMinY, endX - startX, gpH);
+            if (gpMinY + gpH >= 0 && gpMinY <= canvasH) {
+                ctx.fillStyle = 'rgba(34, 197, 94, 0.18)';
+                ctx.fillRect(startX, gpMinY, endX - startX, gpH);
+                ctx.strokeStyle = 'rgba(34, 197, 94, 0.5)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(startX, gpMinY, endX - startX, gpH);
+            }
         }
 
         // 3. วาดเส้นระดับราคาและป้ายข้อมูล (Level Lines & Price Badges)
         calculatedLevels.forEach(lvl => {
-            if (lvl.y === null) return;
+            if (lvl.y === null || isNaN(lvl.y)) return;
             const y = lvl.y;
+            if (y < -30 || y > canvasH + 30) return;
 
             // เส้นแนวนอน
             ctx.strokeStyle = lvl.color;
@@ -4426,7 +4686,11 @@ class ChartEngine {
             ctx.strokeStyle = lvl.color;
             ctx.lineWidth = lvl.isGolden ? 1.5 : 1;
             ctx.beginPath();
-            ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 4);
+            if (typeof ctx.roundRect === 'function') {
+                ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 4);
+            } else {
+                this.drawSafeRoundedRect(ctx, badgeX, badgeY, badgeW, badgeH, 4);
+            }
             ctx.fill();
             ctx.stroke();
 
@@ -4457,15 +4721,22 @@ class ChartEngine {
 
         ctx.fillStyle = '#38bdf8';
         ctx.font = 'bold 10px sans-serif';
-        ctx.fillText(`A ($${p1.toFixed(decimals)})`, x1 + 6, y1 - 6);
-        ctx.fillText(`B ($${p2.toFixed(decimals)})`, x2 + 6, y2 - 6);
+        if (x1 >= -100 && x1 <= canvasW + 100 && y1 >= -50 && y1 <= canvasH + 50) {
+            ctx.fillText(`A ($${p1.toFixed(decimals)})`, x1 + 6, y1 - 6);
+        }
+        if (x2 >= -100 && x2 <= canvasW + 100 && y2 >= -50 && y2 <= canvasH + 50) {
+            ctx.fillText(`B ($${p2.toFixed(decimals)})`, x2 + 6, y2 - 6);
+        }
 
         // 5. ป้ายข้อความ Golden Pocket
-        if (lvl618 && lvl500 && lvl618.y !== null && lvl500.y !== null) {
+        if (lvl618 && lvl500 && lvl618.y !== null && lvl500.y !== null && !isNaN(lvl618.y) && !isNaN(lvl500.y)) {
             const midY = (lvl500.y + lvl618.y) / 2;
-            ctx.font = 'bold 9.5px sans-serif';
-            ctx.fillStyle = 'rgba(34, 197, 94, 0.9)';
-            ctx.fillText('✨ GOLDEN POCKET (0.5 - 0.618)', endX - 180, midY + 3);
+            if (midY >= 10 && midY <= canvasH - 10) {
+                ctx.font = 'bold 9.5px sans-serif';
+                ctx.fillStyle = 'rgba(34, 197, 94, 0.9)';
+                const tagX = Math.max(startX + 10, endX - 180);
+                ctx.fillText('✨ GOLDEN POCKET (0.5 - 0.618)', tagX, midY + 3);
+            }
         }
 
         ctx.restore();
@@ -4977,6 +5248,9 @@ class ChartEngine {
 
     getToolDisplayName(tool) {
         const names = {
+            'eraser': 'ยางลบ (Universal Eraser)',
+            'pen': 'ปากกาวาดเขียน (Pen / Tablet)',
+            'arrow': 'ลูกศร (Arrow Tool)',
             'trendline': 'เส้นแนวโน้ม (Trendline)',
             'horzline': 'เส้นแนวนอน (Horizontal Line)',
             'horzray': 'เรย์แนวนอน (Horizontal Ray)',
@@ -4996,6 +5270,9 @@ class ChartEngine {
 
         const label = document.getElementById('tb-current-draw-label');
         const shortNames = {
+            'eraser': 'ยางลบ',
+            'pen': 'ปากกา',
+            'arrow': 'ลูกศร',
             'trendline': 'เส้นแนวโน้ม',
             'horzline': 'เส้นแนวนอน',
             'horzray': 'เรย์แนวนอน',
@@ -5027,18 +5304,37 @@ class ChartEngine {
         });
 
         document.body.classList.toggle('drawing-mode-active', !!tool);
+        document.body.classList.toggle('drawing-mode-eraser', tool === 'eraser');
+
+        // รีเซ็ตสถานะยางลบ และล้างการวาดที่ค้างอยู่ข้ามทุกชาร์ตเสมอ (ป้องกันบั๊กเครื่องมือค้างเมื่อสลับเครื่องมือหรือกดยกเลิก)
+        this.isErasing = false;
+        this.charts.forEach(c => {
+            if (c.currentDrawing) {
+                c.currentDrawing = null;
+                this.updateOverlays(c);
+            }
+            if (c.activeDrawingDrag) {
+                c.activeDrawingDrag = null;
+            }
+            if (!tool || tool === 'eraser') {
+                c.selectedDrawingId = null;
+                (c.drawings || []).forEach(d => d.selected = false);
+                this.updateOverlays(c);
+            }
+        });
+
+        if (!tool || tool === 'eraser') {
+            this.hideDrawingActionBar();
+        }
 
         if (tool) {
             if (this.isMeasureActive) this.toggleMeasureTool(false);
             if (this.isFibonacciActive) this.toggleFibonacciTool(false);
-            this.showToast(`🎨 เลือกเครื่องมือ: ${shortNames[tool]} (แตะ/คลิกบนกราฟเพื่อวาด)`);
-        } else {
-            this.charts.forEach(c => {
-                if (c.currentDrawing) {
-                    c.currentDrawing = null;
-                    this.updateOverlays(c);
-                }
-            });
+            if (tool === 'eraser') {
+                this.showToast('🧹 เลือกยางลบ (แตะหรือลากผ่านเส้นวาด/โซน/แผนเทรดเพื่อลบทันที)');
+            } else {
+                this.showToast(`🎨 เลือกเครื่องมือ: ${shortNames[tool]} (แตะ/คลิกบนกราฟเพื่อวาด)`);
+            }
         }
 
         if (window.app && window.app.updateToolsMenuButton) {
@@ -5046,23 +5342,91 @@ class ChartEngine {
         }
     }
 
+    eraseAtPoint(cellObj, px, py) {
+        if (!cellObj) return;
+        let erasedSomething = false;
+
+        // 1. ตรวจสอบการลบ Drawing ปกติ (Pen, Trendline, Arrow, Horzline, Ray, Vertline, Rect, Position, Path, Text)
+        // ส่ง isEraser = true เพื่อให้ Hit Radius กว้างขึ้นแตะโดนง่าย
+        const hitDrawing = this.getDrawingHitTest(cellObj, px, py, true);
+        if (hitDrawing) {
+            if (hitDrawing.locked) {
+                this.showToast(`🔒 ${this.getToolDisplayName(hitDrawing.type)} ถูกล็อคไว้ ไม่สามารถใช้ยางลบลบได้`);
+                return;
+            }
+            cellObj.drawings = (cellObj.drawings || []).filter(d => d.id !== hitDrawing.id);
+            if (cellObj.selectedDrawingId === hitDrawing.id) {
+                cellObj.selectedDrawingId = null;
+                this.hideDrawingActionBar();
+            }
+            this.saveDrawings(cellObj.symbol, cellObj.drawings);
+            erasedSomething = true;
+        }
+
+        // 2. ตรวจสอบการลบ Price Alert หากคลิกโดนเส้น Alert
+        const hitAlert = this.getAlertHitTest(cellObj, px, py);
+        if (hitAlert && hitAlert.alertId) {
+            this.deletePriceAlert(cellObj.symbol, hitAlert.alertId);
+            erasedSomething = true;
+        }
+
+        if (erasedSomething) {
+            this.updateOverlays(cellObj);
+            this.showToast('🗑️ ลบแล้ว');
+        }
+    }
+
     handleDrawingPointerDown(cellObj, coords) {
         const tool = this.activeDrawingTool;
         if (!tool) return;
+
+        // หากชาร์ตอยู่ในสถานะซ่อน ให้เปิดแสดงผลทันที เพื่อให้เห็นสิ่งที่กำลังจะวาด
+        if (cellObj.hideDrawings) {
+            this.toggleHideDrawings(cellObj.index);
+        }
+
+        // -1. ยางลบลบภาพวาด (Universal Eraser): แตะหรือคลิกเพื่อลบเส้น/โซน/วัตถุใดๆ ทันที
+        if (tool === 'eraser') {
+            this.isErasing = true;
+            this.eraseAtPoint(cellObj, coords.x, coords.y);
+            return;
+        }
 
         const isGold = cellObj.symbol.includes('XAU') || cellObj.symbol.includes('GOLD');
         const isForex = cellObj.symbol.includes('EUR') || cellObj.symbol.includes('GBP') || cellObj.symbol.includes('JPY') || cellObj.symbol.includes('AUD');
         const decimals = isGold ? 3 : (isForex ? 5 : 2);
         const safePrice = (typeof coords.price === 'number') ? coords.price : (cellObj.visibleCandles?.[cellObj.visibleCandles.length - 1]?.close || 2000);
 
-        // 0. แจ้งเตือนราคา (Price Alert): คลิกจุดเดียว วางเส้น Alert ณ ระดับราคานั้นทันที
+        // 0. ปากกาวาดอิสระ (Pen / Freehand Tablet Tool): ลากวาดเส้นต่อเนื่อง บันทึกจุดอัตโนมัติระดับ Sub-pixel
+        if (tool === 'pen') {
+            cellObj.currentDrawing = {
+                id: 'draw_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+                type: 'pen',
+                points: [{
+                    time: coords.time,
+                    price: coords.price,
+                    logical: coords.logical,
+                    logicalOffset: coords.logicalOffset || 0,
+                    screenX: coords.x,
+                    screenY: coords.y,
+                    pressure: coords.pressure || 0.5
+                }],
+                color: '#f59e0b',
+                lineWidth: 2.5,
+                phase: 'drawing'
+            };
+            this.updateOverlays(cellObj);
+            return;
+        }
+
+        // 0.1 แจ้งเตือนราคา (Price Alert): คลิกจุดเดียว วางเส้น Alert ณ ระดับราคานั้นทันที
         if (tool === 'price_alert') {
             this.addPriceAlert(cellObj.symbol, safePrice);
             this.setDrawingTool(null);
             return;
         }
 
-        // 0.1 Long & Short Position (Risk/Reward Ratio Calculator)
+        // 0.2 Long & Short Position (Risk/Reward Ratio Calculator)
         if (tool === 'long_position' || tool === 'short_position') {
             const isLong = (tool === 'long_position');
             let defaultStopDist = isGold ? 3.0 : (isForex ? 0.0030 : (cellObj.symbol.includes('BTC') ? 500 : (safePrice * 0.01)));
@@ -5161,16 +5525,17 @@ class ChartEngine {
             return;
         }
 
-        // 5. เส้นแนวโน้ม (Trendline): จุดเริ่ม -> จุดสิ้นสุด
-        if (tool === 'trendline') {
+        // 5. เส้นแนวโน้ม (Trendline) & ลูกศร (Arrow Tool): จุดเริ่ม -> จุดสิ้นสุด
+        if (tool === 'trendline' || tool === 'arrow') {
             if (!cellObj.currentDrawing) {
                 cellObj.currentDrawing = {
                     id: 'draw_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
-                    type: 'trendline',
+                    type: tool,
                     points: [{ time: coords.time, price: coords.price }, { time: coords.time, price: coords.price }],
                     startX: coords.x,
                     startY: coords.y,
                     color: '#38bdf8',
+                    text: '',
                     phase: 'drawing'
                 };
                 this.updateOverlays(cellObj);
@@ -5179,12 +5544,16 @@ class ChartEngine {
                 delete cellObj.currentDrawing.phase;
                 delete cellObj.currentDrawing.startX;
                 delete cellObj.currentDrawing.startY;
+                cellObj.currentDrawing.selected = true;
+                cellObj.selectedDrawingId = cellObj.currentDrawing.id;
                 cellObj.drawings.push(cellObj.currentDrawing);
                 this.saveDrawings(cellObj.symbol, cellObj.drawings);
+                const finishedDrawing = cellObj.currentDrawing;
                 cellObj.currentDrawing = null;
                 this.setDrawingTool(null);
                 this.updateOverlays(cellObj);
-                this.showToast('✓ วาดเส้นแนวโน้มเรียบร้อย');
+                this.showDrawingActionBar(cellObj, finishedDrawing);
+                this.showToast(`✓ วาด${tool === 'arrow' ? 'ลูกศร' : 'เส้นแนวโน้ม'}เรียบร้อย (ดับเบิ้ลคลิกเพื่อใส่ข้อความ)`);
             }
             return;
         }
@@ -5266,7 +5635,26 @@ class ChartEngine {
     handleDrawingPointerMove(cellObj, coords) {
         if (!cellObj.currentDrawing) return;
         const type = cellObj.currentDrawing.type;
-        if (type === 'trendline' || type === 'rectangle') {
+        if (type === 'pen') {
+            const pts = cellObj.currentDrawing.points;
+            const lastPt = pts[pts.length - 1];
+            // ตรวจสอบระยะพิกเซลบนหน้าจอ (>= 2.0px) เพื่อจับลายมือและเส้นโค้งอย่างต่อเนื่อง นุ่มนวล ไม่สะดุด
+            const lastScreenX = lastPt.screenX !== undefined ? lastPt.screenX : this.drawingCoordToScreen(cellObj, lastPt).x;
+            const lastScreenY = lastPt.screenY !== undefined ? lastPt.screenY : this.drawingCoordToScreen(cellObj, lastPt).y;
+            const dist = Math.hypot(coords.x - lastScreenX, coords.y - lastScreenY);
+            if (dist >= 2.0) {
+                pts.push({
+                    time: coords.time,
+                    price: coords.price,
+                    logical: coords.logical,
+                    logicalOffset: coords.logicalOffset || 0,
+                    screenX: coords.x,
+                    screenY: coords.y,
+                    pressure: coords.pressure || 0.5
+                });
+                this.updateOverlays(cellObj);
+            }
+        } else if (type === 'trendline' || type === 'arrow' || type === 'rectangle') {
             cellObj.currentDrawing.points[1] = { time: coords.time, price: coords.price };
             this.updateOverlays(cellObj);
         } else if (type === 'path') {
@@ -5278,7 +5666,24 @@ class ChartEngine {
     handleDrawingPointerUp(cellObj, coords) {
         if (!cellObj.currentDrawing) return;
         const cur = cellObj.currentDrawing;
-        if (cur.type === 'trendline' || cur.type === 'rectangle') {
+        if (cur.type === 'pen') {
+            // รองรับทั้งการแตะจุดเดียว (Dot เช่น สระ วรรณยุกต์ จุดทศนิยม) และเส้นลากยาว
+            if (cur.points && cur.points.length >= 1) {
+                delete cur.phase;
+                cur.selected = false;
+                cellObj.selectedDrawingId = null;
+                cellObj.drawings.push(cur);
+                this.saveDrawings(cellObj.symbol, cellObj.drawings);
+                cellObj.currentDrawing = null;
+                this.updateOverlays(cellObj);
+            } else {
+                cellObj.currentDrawing = null;
+                this.updateOverlays(cellObj);
+            }
+            return;
+        }
+
+        if (cur.type === 'trendline' || cur.type === 'arrow' || cur.type === 'rectangle') {
             if (cur.startX !== undefined && cur.startY !== undefined) {
                 const dist = Math.hypot(coords.x - cur.startX, coords.y - cur.startY);
                 if (dist > 15) {
@@ -5286,12 +5691,17 @@ class ChartEngine {
                     delete cur.phase;
                     delete cur.startX;
                     delete cur.startY;
+                    cur.selected = true;
+                    cellObj.selectedDrawingId = cur.id;
                     cellObj.drawings.push(cur);
                     this.saveDrawings(cellObj.symbol, cellObj.drawings);
+                    const finishedDrawing = cur;
                     cellObj.currentDrawing = null;
                     this.setDrawingTool(null);
                     this.updateOverlays(cellObj);
-                    this.showToast(`✓ วาด${cur.type === 'trendline' ? 'เส้นแนวโน้ม' : 'Rectangle Zone'}เรียบร้อย`);
+                    this.showDrawingActionBar(cellObj, finishedDrawing);
+                    const name = (cur.type === 'arrow') ? 'ลูกศร' : (cur.type === 'trendline' ? 'เส้นแนวโน้ม' : 'Rectangle Zone');
+                    this.showToast(`✓ วาด${name}เรียบร้อย (ดับเบิ้ลคลิกเพื่อใส่ข้อความ)`);
                 }
             }
         }
@@ -5521,9 +5931,15 @@ class ChartEngine {
 
     deleteSelectedDrawing() {
         let deleted = false;
+        let blockedByLock = false;
         for (const cell of this.charts) {
             if (cell && cell.selectedDrawingId) {
                 const drawingId = cell.selectedDrawingId;
+                const target = (cell.drawings || []).find(d => d.id === drawingId);
+                if (target && target.locked) {
+                    blockedByLock = true;
+                    continue;
+                }
                 cell.drawings = (cell.drawings || []).filter(d => d.id !== drawingId);
                 cell.selectedDrawingId = null;
                 this.saveDrawings(cell.symbol, cell.drawings);
@@ -5532,13 +5948,16 @@ class ChartEngine {
             }
         }
         this.hideDrawingActionBar();
-        if (deleted) {
+        if (blockedByLock) {
+            this.showToast('🔒 ภาพวาดนี้ถูกล็อคไว้ ไม่สามารถลบได้ (กรุณาปลดล็อคก่อน)');
+        } else if (deleted) {
             this.showToast('🗑️ ลบภาพวาดเรียบร้อย');
         }
     }
 
     deleteDrawingById(cellIndex, drawingId) {
         let found = false;
+        let blockedByLock = false;
         const checkCells = [];
         if (cellIndex !== undefined && this.charts[cellIndex]) {
             checkCells.push(this.charts[cellIndex]);
@@ -5549,6 +5968,11 @@ class ChartEngine {
 
         for (const cell of checkCells) {
             if (cell && cell.drawings && cell.drawings.some(d => d.id === drawingId)) {
+                const target = cell.drawings.find(d => d.id === drawingId);
+                if (target && target.locked) {
+                    blockedByLock = true;
+                    continue;
+                }
                 cell.drawings = cell.drawings.filter(d => d.id !== drawingId);
                 if (cell.selectedDrawingId === drawingId) {
                     cell.selectedDrawingId = null;
@@ -5559,9 +5983,89 @@ class ChartEngine {
             }
         }
         this.hideDrawingActionBar();
-        if (found) {
+        if (blockedByLock) {
+            this.showToast('🔒 ภาพวาดนี้ถูกล็อคไว้ ไม่สามารถลบได้ (กรุณาปลดล็อคก่อน)');
+        } else if (found) {
             this.showToast('🗑️ ลบภาพวาดเรียบร้อย');
         }
+    }
+
+    toggleLockDrawing(cellIndex, drawingId) {
+        let targetCell = null;
+        let targetDrawing = null;
+        const checkCells = [];
+        if (cellIndex !== undefined && this.charts[cellIndex]) {
+            checkCells.push(this.charts[cellIndex]);
+        }
+        for (const c of this.charts) {
+            if (!checkCells.includes(c)) checkCells.push(c);
+        }
+
+        for (const cell of checkCells) {
+            if (cell && cell.drawings) {
+                const d = cell.drawings.find(item => item.id === drawingId);
+                if (d) {
+                    targetCell = cell;
+                    targetDrawing = d;
+                    break;
+                }
+            }
+        }
+
+        if (!targetCell || !targetDrawing) return;
+
+        targetDrawing.locked = !targetDrawing.locked;
+        this.saveDrawings(targetCell.symbol, targetCell.drawings);
+        this.updateOverlays(targetCell);
+        this.showDrawingActionBar(targetCell, targetDrawing);
+
+        const name = this.getToolDisplayName(targetDrawing.type);
+        if (targetDrawing.locked) {
+            this.showToast(`🔒 ล็อค ${name} แล้ว (ป้องกันการย้ายและการลบ)`);
+        } else {
+            this.showToast(`🔓 ปลดล็อค ${name} แล้ว (สามารถย้ายหรือลบได้ตามปกติ)`);
+        }
+    }
+
+    toggleHideDrawings(cellIndex) {
+        const idx = cellIndex !== undefined ? cellIndex : this.activeChartIndex;
+        const cell = this.charts[idx];
+        if (!cell) return;
+
+        cell.hideDrawings = !cell.hideDrawings;
+
+        // อัปเดตปุ่มลูกตาบน Header ชาร์ต
+        const btn = document.getElementById(`btn-cell-drawings-${idx}`);
+        const svg = document.getElementById(`svg-cell-drawings-${idx}`);
+        if (btn) {
+            btn.classList.toggle('drawings-hidden', !!cell.hideDrawings);
+            btn.title = cell.hideDrawings ? 'แสดงภาพวาดและเครื่องมือทั้งหมด (รวม Fibo & วัดระยะ) บนชาร์ตนี้' : 'ซ่อนภาพวาดและเครื่องมือทั้งหมด (รวม Fibo & วัดระยะ) บนชาร์ตนี้';
+        }
+        if (svg) {
+            if (cell.hideDrawings) {
+                svg.innerHTML = '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
+            } else {
+                svg.innerHTML = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+            }
+        }
+
+        // ซ่อนหรือแสดง Floating Badges ของ Fibo และ Measure
+        const fiboBadge = cell.element ? cell.element.querySelector(`#fibo-badge-${idx}`) : null;
+        const measureBadge = cell.element ? cell.element.querySelector(`#measure-badge-${idx}`) : null;
+
+        if (cell.hideDrawings) {
+            cell.selectedDrawingId = null;
+            if (cell.drawings) cell.drawings.forEach(d => d.selected = false);
+            this.hideDrawingActionBar();
+            if (fiboBadge) fiboBadge.style.display = 'none';
+            if (measureBadge) measureBadge.style.display = 'none';
+        } else {
+            if (fiboBadge && cell.fiboStart && cell.fiboCurrent) fiboBadge.style.display = 'flex';
+            if (measureBadge && cell.measureStart && cell.measureCurrent) measureBadge.style.display = 'flex';
+        }
+
+        this.updateOverlays(cell);
+        this.showToast(cell.hideDrawings ? `👁️‍🗨️ ซ่อนเครื่องมือทั้งหมด (รวม Fibo & วัดระยะ) บนชาร์ต ${cell.symbol || ''} แล้ว` : `👁️ แสดงเครื่องมือทั้งหมด (รวม Fibo & วัดระยะ) บนชาร์ต ${cell.symbol || ''} แล้ว`);
     }
 
     scaleTextDrawing(cellIndex, drawingId, delta) {
@@ -5616,6 +6120,172 @@ class ChartEngine {
         this.showInlineTextEditor(cell, screenCoords, d);
     }
 
+    getPenBounds(cell, drawing, canvasW) {
+        if (!drawing || !drawing.points || drawing.points.length === 0) return null;
+        const toScreen = (pt) => this.drawingCoordToScreen(cell, pt, canvasW);
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        drawing.points.forEach(pt => {
+            const p = toScreen(pt);
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+        });
+        const pad = 6;
+        return {
+            minX: minX - pad,
+            maxX: maxX + pad,
+            minY: minY - pad,
+            maxY: maxY + pad,
+            width: Math.max(20, (maxX - minX) + pad * 2),
+            height: Math.max(20, (maxY - minY) + pad * 2)
+        };
+    }
+
+    showPromptModal({ title, subtitle, icon = '📝', defaultValue = '', placeholder = '', inputType = 'text', confirmText = '✓', cancelText = '✕', clearText = null, onConfirm, onClear }) {
+        let overlay = document.getElementById('chart-app-prompt-modal');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'chart-app-prompt-modal';
+            overlay.className = 'app-prompt-modal-overlay';
+            document.body.appendChild(overlay);
+        }
+
+        const safeDefault = (defaultValue !== undefined && defaultValue !== null) ? String(defaultValue).replace(/"/g, '&quot;') : '';
+        const safePlace = placeholder ? String(placeholder).replace(/"/g, '&quot;') : (title ? String(title).replace(/"/g, '&quot;') : 'พิมพ์ข้อความ...');
+        const hasExisting = safeDefault && safeDefault.trim().length > 0;
+
+        overlay.innerHTML = `
+            <div class="app-prompt-modal-box" onclick="event.stopPropagation()">
+                <div class="apm-clean-bar">
+                    ${icon ? `<span class="apm-bar-icon" title="${title || ''}">${icon}</span>` : ''}
+                    <input type="${inputType}" class="apm-bar-input" id="apm-input-field" value="${safeDefault}" placeholder="${safePlace}" autocomplete="off" />
+                    ${(clearText || (hasExisting && onClear)) ? `<button type="button" class="apm-btn-icon apm-btn-clear" id="apm-clear-btn" title="ลบข้อความ">🗑️</button>` : ''}
+                    <button type="button" class="apm-btn-icon apm-btn-confirm" id="apm-confirm-btn" title="บันทึก (Enter)">✓</button>
+                    <button type="button" class="apm-btn-icon apm-btn-cancel" id="apm-cancel-btn" title="ยกเลิก (Esc)">✕</button>
+                </div>
+            </div>
+        `;
+
+        const closeModal = () => {
+            overlay.classList.remove('visible');
+            setTimeout(() => { overlay.style.display = 'none'; }, 150);
+            document.removeEventListener('keydown', keyHandler);
+        };
+
+        const confirmAction = () => {
+            const input = overlay.querySelector('#apm-input-field');
+            const val = input ? input.value : '';
+            closeModal();
+            if (typeof onConfirm === 'function') onConfirm(val);
+        };
+
+        const clearAction = () => {
+            closeModal();
+            if (typeof onClear === 'function') onClear();
+        };
+
+        const keyHandler = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                confirmAction();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                closeModal();
+            }
+        };
+
+        overlay.onclick = (e) => {
+            if (e.target === overlay) closeModal();
+        };
+
+        const btnCancel = overlay.querySelector('#apm-cancel-btn');
+        if (btnCancel) btnCancel.onclick = closeModal;
+
+        const btnConfirm = overlay.querySelector('#apm-confirm-btn');
+        if (btnConfirm) btnConfirm.onclick = confirmAction;
+
+        const btnClear = overlay.querySelector('#apm-clear-btn');
+        if (btnClear) btnClear.onclick = clearAction;
+
+        overlay.style.display = 'flex';
+        void overlay.offsetHeight;
+        overlay.classList.add('visible');
+        document.addEventListener('keydown', keyHandler);
+
+        setTimeout(() => {
+            const input = overlay.querySelector('#apm-input-field');
+            if (input) {
+                input.focus();
+                input.select();
+            }
+        }, 50);
+    }
+
+    promptLineText(cellIndex, drawingId) {
+        const idx = cellIndex !== undefined ? cellIndex : this.activeChartIndex;
+        const cell = this.charts[idx];
+        if (!cell) return;
+        const d = (cell.drawings || []).find(item => item.id === drawingId);
+        if (!d) return;
+
+        const currentText = d.text || '';
+        const toolName = this.getToolDisplayName(d.type);
+        this.showPromptModal({
+            title: `ข้อความกำกับบนเส้น (${toolName})`,
+            subtitle: 'พิมพ์ข้อความกำกับบนเส้น เช่น Breakout 2045, Target Line, Key S/R, แนวรับ/ต้าน สำคัญ',
+            icon: '📝',
+            defaultValue: currentText,
+            placeholder: 'พิมพ์ข้อความ เช่น Breakout 2045...',
+            confirmText: '✓ บันทึกข้อความ',
+            cancelText: 'ยกเลิก',
+            clearText: currentText ? '🗑️ ลบข้อความ' : null,
+            onConfirm: (newText) => {
+                d.text = newText ? newText.trim() : '';
+                d.selected = true;
+                cell.selectedDrawingId = d.id;
+                this.saveDrawings(cell.symbol, cell.drawings);
+                this.updateOverlays(cell);
+                this.showDrawingActionBar(cell, d);
+                this.showToast(d.text ? `✓ ใส่ข้อความ "${d.text}" บนเส้นแล้ว` : '✓ ลบข้อความออกจากเส้นแล้ว');
+            },
+            onClear: () => {
+                d.text = '';
+                d.selected = true;
+                cell.selectedDrawingId = d.id;
+                this.saveDrawings(cell.symbol, cell.drawings);
+                this.updateOverlays(cell);
+                this.showDrawingActionBar(cell, d);
+                this.showToast('✓ ลบข้อความออกจากเส้นแล้ว');
+            }
+        });
+    }
+
+    setDrawingColor(cellIndex, drawingId, color) {
+        const idx = cellIndex !== undefined ? cellIndex : this.activeChartIndex;
+        const cell = this.charts[idx];
+        if (!cell) return;
+        const d = (cell.drawings || []).find(item => item.id === drawingId);
+        if (!d) return;
+        d.color = color;
+        this.saveDrawings(cell.symbol, cell.drawings);
+        this.updateOverlays(cell);
+        this.showDrawingActionBar(cell, d);
+    }
+
+    setPenWidth(cellIndex, drawingId, width) {
+        const idx = cellIndex !== undefined ? cellIndex : this.activeChartIndex;
+        const cell = this.charts[idx];
+        if (!cell) return;
+        const d = (cell.drawings || []).find(item => item.id === drawingId);
+        if (!d || d.type !== 'pen') return;
+        d.lineWidth = width;
+        this.saveDrawings(cell.symbol, cell.drawings);
+        this.updateOverlays(cell);
+        this.showDrawingActionBar(cell, d);
+        this.showToast(`✓ ปรับขนาดเส้นปากกาเป็น ${width}px`);
+    }
+
     showDrawingActionBar(cell, drawing) {
         if (!cell || (!cell.container && !cell.element) || !drawing) return;
         if (!cell.container && cell.element) cell.container = cell.element;
@@ -5630,6 +6300,14 @@ class ChartEngine {
         const cellIndex = cell.index;
         const drawingId = drawing.id;
         const isText = (drawing.type === 'text');
+        const isLine = (drawing.type === 'trendline' || drawing.type === 'arrow' || drawing.type === 'horzline' || drawing.type === 'horzray' || drawing.type === 'vertline' || drawing.type === 'path');
+        const isPen = (drawing.type === 'pen');
+        const isLocked = !!drawing.locked;
+        const lockBtnHtml = `
+            <button type="button" class="dab-btn ${isLocked ? 'dab-locked' : ''}" onclick="window.chartEngine.toggleLockDrawing(${cellIndex}, '${drawingId}')" title="${isLocked ? 'ปลดล็อคภาพวาด (เพื่อย้ายหรือลบ)' : 'ล็อคภาพวาด (ป้องกันการลบหรือเคลื่อนย้าย)'}">
+                <span>${isLocked ? '🔒 ล็อคอยู่' : '🔓 ล็อค'}</span>
+            </button>
+        `;
 
         if (isText) {
             const fontSize = drawing.fontSize || 14;
@@ -5646,10 +6324,69 @@ class ChartEngine {
                     <span>✎ แก้ไข</span>
                 </button>
                 <div class="dab-sep"></div>
+                ${lockBtnHtml}
                 <button type="button" class="dab-btn dab-danger" onclick="window.chartEngine.deleteDrawingById(${cellIndex}, '${drawingId}')" title="ลบข้อความนี้ (✕)">
                     <span>✕ ลบ</span>
                 </button>
                 <button type="button" class="dab-btn" onclick="window.chartEngine.deselectAllDrawings()" title="ยกเลิกการเลือก" style="padding: 3px 6px;">
+                    <span>✓</span>
+                </button>
+            `;
+        } else if (isLine) {
+            const hasText = !!(drawing.text && drawing.text.trim());
+            const textLabel = hasText ? `✎ "${drawing.text.length > 12 ? drawing.text.slice(0, 10) + '...' : drawing.text}"` : '📝 ข้อความ';
+            const curCol = drawing.color || '#38bdf8';
+            const lineNames = {
+                'trendline': '📈 เทรนด์ไลน์',
+                'arrow': '🏹 ลูกศร',
+                'horzline': '➖ แนวนอน',
+                'horzray': '➡️ เรย์แนวนอน',
+                'vertline': '╽ แนวตั้ง',
+                'path': '🔀 เส้นทาง'
+            };
+            const titleLabel = lineNames[drawing.type] || '📏 เส้น';
+            bar.innerHTML = `
+                <span class="dab-label">${titleLabel}</span>
+                <div class="dab-sep"></div>
+                <button type="button" class="dab-btn ${hasText ? 'dab-active' : ''}" onclick="window.chartEngine.promptLineText(${cellIndex}, '${drawingId}')" title="${hasText ? 'แก้ไขข้อความบนเส้น' : 'เพิ่มข้อความบนเส้น'}">
+                    <span>${textLabel}</span>
+                </button>
+                <div class="dab-sep"></div>
+                <button type="button" class="dab-btn" style="color:#38bdf8; ${curCol === '#38bdf8' ? 'border-bottom: 2px solid #38bdf8;' : ''}" onclick="window.chartEngine.setDrawingColor(${cellIndex}, '${drawingId}', '#38bdf8')" title="สีฟ้า">●</button>
+                <button type="button" class="dab-btn" style="color:#f59e0b; ${curCol === '#f59e0b' ? 'border-bottom: 2px solid #f59e0b;' : ''}" onclick="window.chartEngine.setDrawingColor(${cellIndex}, '${drawingId}', '#f59e0b')" title="สีส้ม">●</button>
+                <button type="button" class="dab-btn" style="color:#10b981; ${curCol === '#10b981' ? 'border-bottom: 2px solid #10b981;' : ''}" onclick="window.chartEngine.setDrawingColor(${cellIndex}, '${drawingId}', '#10b981')" title="สีเขียว">●</button>
+                <button type="button" class="dab-btn" style="color:#ef4444; ${curCol === '#ef4444' ? 'border-bottom: 2px solid #ef4444;' : ''}" onclick="window.chartEngine.setDrawingColor(${cellIndex}, '${drawingId}', '#ef4444')" title="สีแดง">●</button>
+                <button type="button" class="dab-btn" style="color:#ffffff; ${curCol === '#ffffff' ? 'border-bottom: 2px solid #ffffff;' : ''}" onclick="window.chartEngine.setDrawingColor(${cellIndex}, '${drawingId}', '#ffffff')" title="สีขาว">●</button>
+                <div class="dab-sep"></div>
+                ${lockBtnHtml}
+                <button type="button" class="dab-btn dab-danger" onclick="window.chartEngine.deleteDrawingById(${cellIndex}, '${drawingId}')" title="ลบเส้นนี้ (✕)">
+                    <span>✕ ลบ</span>
+                </button>
+                <button type="button" class="dab-btn" onclick="window.chartEngine.deselectAllDrawings()" title="เสร็จสิ้น" style="padding: 3px 6px;">
+                    <span>✓</span>
+                </button>
+            `;
+        } else if (isPen) {
+            const curCol = drawing.color || '#f59e0b';
+            const curWidth = drawing.lineWidth || 2.5;
+            bar.innerHTML = `
+                <span class="dab-label">🖊️ ปากกา</span>
+                <div class="dab-sep"></div>
+                <button type="button" class="dab-btn ${curWidth === 1.5 ? 'dab-active' : ''}" onclick="window.chartEngine.setPenWidth(${cellIndex}, '${drawingId}', 1.5)" title="เส้นบาง (1.5px)"><span>เส้นบาง</span></button>
+                <button type="button" class="dab-btn ${curWidth === 2.5 ? 'dab-active' : ''}" onclick="window.chartEngine.setPenWidth(${cellIndex}, '${drawingId}', 2.5)" title="ปกติ"><span>ปกติ</span></button>
+                <button type="button" class="dab-btn ${curWidth === 4.5 ? 'dab-active' : ''}" onclick="window.chartEngine.setPenWidth(${cellIndex}, '${drawingId}', 4.5)" title="เส้นหนา (4.5px)"><span>เส้นหนา</span></button>
+                <div class="dab-sep"></div>
+                <button type="button" class="dab-btn" style="color:#f59e0b; ${curCol === '#f59e0b' ? 'border-bottom: 2px solid #f59e0b;' : ''}" onclick="window.chartEngine.setDrawingColor(${cellIndex}, '${drawingId}', '#f59e0b')" title="สีส้ม/ทอง">●</button>
+                <button type="button" class="dab-btn" style="color:#38bdf8; ${curCol === '#38bdf8' ? 'border-bottom: 2px solid #38bdf8;' : ''}" onclick="window.chartEngine.setDrawingColor(${cellIndex}, '${drawingId}', '#38bdf8')" title="สีฟ้า">●</button>
+                <button type="button" class="dab-btn" style="color:#10b981; ${curCol === '#10b981' ? 'border-bottom: 2px solid #10b981;' : ''}" onclick="window.chartEngine.setDrawingColor(${cellIndex}, '${drawingId}', '#10b981')" title="สีเขียว">●</button>
+                <button type="button" class="dab-btn" style="color:#ef4444; ${curCol === '#ef4444' ? 'border-bottom: 2px solid #ef4444;' : ''}" onclick="window.chartEngine.setDrawingColor(${cellIndex}, '${drawingId}', '#ef4444')" title="สีแดง">●</button>
+                <button type="button" class="dab-btn" style="color:#ffffff; ${curCol === '#ffffff' ? 'border-bottom: 2px solid #ffffff;' : ''}" onclick="window.chartEngine.setDrawingColor(${cellIndex}, '${drawingId}', '#ffffff')" title="สีขาว">●</button>
+                <div class="dab-sep"></div>
+                ${lockBtnHtml}
+                <button type="button" class="dab-btn dab-danger" onclick="window.chartEngine.deleteDrawingById(${cellIndex}, '${drawingId}')" title="ลบภาพวาดปากกานี้ (✕)">
+                    <span>✕ ลบ</span>
+                </button>
+                <button type="button" class="dab-btn" onclick="window.chartEngine.deselectAllDrawings()" title="เสร็จสิ้น" style="padding: 3px 6px;">
                     <span>✓</span>
                 </button>
             `;
@@ -5674,6 +6411,7 @@ class ChartEngine {
                     <span>🏷️ ป้าย</span>
                 </button>
                 <div class="dab-sep"></div>
+                ${lockBtnHtml}
                 <button type="button" class="dab-btn dab-danger" onclick="window.chartEngine.deleteDrawingById(${cellIndex}, '${drawingId}')" title="ลบกล่องนี้ (✕)">
                     <span>✕ ลบ</span>
                 </button>
@@ -5712,6 +6450,10 @@ class ChartEngine {
                 </button>
                 <span class="dab-label" style="color: #38bdf8; font-size: 11px;">Lot: ${stats.lotSize}L</span>
                 <div class="dab-sep"></div>
+                ${lockBtnHtml}
+                <button type="button" class="dab-btn dab-danger" onclick="window.chartEngine.deleteDrawingById(${cellIndex}, '${drawingId}')" title="ลบแผนเทรดนี้ (✕)">
+                    <span>✕ ลบ</span>
+                </button>
                 <button type="button" class="dab-btn" onclick="window.chartEngine.deselectAllDrawings()" title="ปิดแถบเครื่องมือ (✓)" style="padding: 3px 6px;">
                     <span>✓</span>
                 </button>
@@ -5720,6 +6462,7 @@ class ChartEngine {
             bar.innerHTML = `
                 <span class="dab-label">${this.getToolDisplayName(drawing.type)}</span>
                 <div class="dab-sep"></div>
+                ${lockBtnHtml}
                 <button type="button" class="dab-btn dab-danger" onclick="window.chartEngine.deleteDrawingById(${cellIndex}, '${drawingId}')" title="ลบภาพวาดนี้ (✕)">
                     <span>✕ ลบ</span>
                 </button>
@@ -5776,14 +6519,23 @@ class ChartEngine {
         const d = (cell.drawings || []).find(item => item.id === drawingId);
         if (!d || d.type !== 'rectangle') return;
         const curLabel = d.label || (d.zoneType === 'supply' ? 'Supply Zone' : (d.zoneType === 'demand' ? 'Demand Zone' : 'Order Block'));
-        const newLabel = prompt('ระบุป้ายชื่อโซน (เช่น Supply H4, Demand M15, OB Unmitigated):', curLabel);
-        if (newLabel !== null) {
-            d.label = newLabel.trim();
-            this.saveDrawings(cell.symbol, cell.drawings);
-            this.updateOverlays(cell);
-            this.showDrawingActionBar(cell, d);
-            this.showToast(`✓ ปรับป้ายชื่อเป็น "${d.label}"`);
-        }
+        
+        this.showPromptModal({
+            title: 'ป้ายชื่อโซนราคา (Zone Label)',
+            subtitle: 'ระบุชื่อโซน เช่น Supply H4, Demand M15, OB Unmitigated, FVG Gap',
+            icon: '🏷️',
+            defaultValue: curLabel,
+            placeholder: 'ชื่อป้ายโซน...',
+            confirmText: '✓ บันทึกป้ายชื่อ',
+            cancelText: 'ยกเลิก',
+            onConfirm: (newLabel) => {
+                d.label = newLabel ? newLabel.trim() : curLabel;
+                this.saveDrawings(cell.symbol, cell.drawings);
+                this.updateOverlays(cell);
+                this.showDrawingActionBar(cell, d);
+                this.showToast(`✓ ปรับป้ายชื่อเป็น "${d.label}"`);
+            }
+        });
     }
 
     cyclePositionRisk(cellIndex, drawingId) {
@@ -5858,15 +6610,24 @@ class ChartEngine {
         if (!d || (d.type !== 'long_position' && d.type !== 'short_position')) return;
 
         const stats = this.calculatePositionStats(d, cell.symbol);
-        const input = prompt('ระบุอัตรา Risk:Reward Ratio (เช่น 1.5, 2.0, 2.5, 3.0, 5.0):', stats.rr);
-        if (input !== null) {
-            const val = parseFloat(input);
-            if (!isNaN(val) && val > 0) {
-                this.setPositionRR(cellIndex, drawingId, val);
-            } else {
-                this.showToast('⚠️ กรุณาระบุค่า R:R เป็นตัวเลขมากกว่า 0');
+        this.showPromptModal({
+            title: 'ตั้งค่า Risk:Reward Ratio (R:R)',
+            subtitle: 'ระบุอัตราผลตอบแทนต่อความเสี่ยง เช่น 1.5, 2.0, 2.5, 3.0, 5.0 (ระบบจะคำนวณราคา TP ให้อัตโนมัติ)',
+            icon: '🎯',
+            defaultValue: stats.rr,
+            placeholder: 'เช่น 2.0',
+            inputType: 'number',
+            confirmText: '✓ ตั้งค่า R:R',
+            cancelText: 'ยกเลิก',
+            onConfirm: (input) => {
+                const val = parseFloat(input);
+                if (!isNaN(val) && val > 0) {
+                    this.setPositionRR(cellIndex, drawingId, val);
+                } else {
+                    this.showToast('⚠️ กรุณาระบุค่า R:R เป็นตัวเลขมากกว่า 0');
+                }
             }
-        }
+        });
     }
 
     getAlertHitTest(cellObj, px, py) {
@@ -5917,7 +6678,7 @@ class ChartEngine {
         if (!pt) return;
 
         let x = cell.chart.timeScale().timeToCoordinate(pt.time);
-        let y = cell.candleSeries.priceToCoordinate(pt.price);
+        let y = cell.candleSeries ? cell.candleSeries.priceToCoordinate(pt.price) : null;
         if (x === null || y === null) {
             bar.style.display = 'none';
             return;
@@ -5953,66 +6714,33 @@ class ChartEngine {
         const idx = cellIndex !== undefined ? cellIndex : this.activeChartIndex;
         const cell = this.charts[idx];
         if (!cell) return;
-        cell.drawings = [];
+        const lockedCount = (cell.drawings || []).filter(d => d.locked).length;
+        cell.drawings = (cell.drawings || []).filter(d => d.locked);
         cell.currentDrawing = null;
         cell.selectedDrawingId = null;
         this.hideDrawingActionBar();
-        this.saveDrawings(cell.symbol, []);
+        this.saveDrawings(cell.symbol, cell.drawings);
         this.updateOverlays(cell);
-        this.showToast(`🗑️ ลบภาพวาดทั้งหมดบนชาร์ต ${cell.symbol} แล้ว`);
+        if (lockedCount > 0) {
+            this.showToast(`🗑️ ลบภาพวาดที่ไม่ล็อคแล้ว (คงเหลือภาพวาดที่ล็อคไว้ ${lockedCount} ชิ้น)`);
+        } else {
+            this.showToast(`🗑️ ลบภาพวาดทั้งหมดบนชาร์ต ${cell.symbol} แล้ว`);
+        }
     }
 
     drawingCoordToScreen(cell, pt, canvasW) {
         if (!cell || !cell.chart || !pt) return { x: 0, y: 50 };
         const w = canvasW || (cell.vpCanvas ? cell.vpCanvas.width : (cell.container ? cell.container.clientWidth : 800));
-        let x = cell.chart.timeScale().timeToCoordinate(pt.time);
-        let y = cell.candleSeries ? cell.candleSeries.priceToCoordinate(pt.price) : null;
-
-        if (x === null) {
-            if (cell.visibleCandles && cell.visibleCandles.length > 0) {
-                const firstT = cell.visibleCandles[0].time;
-                const lastT = cell.visibleCandles[cell.visibleCandles.length - 1].time;
-                const firstX = cell.chart.timeScale().timeToCoordinate(firstT) || 0;
-                const lastX = cell.chart.timeScale().timeToCoordinate(lastT) || w;
-                const barSpacing = (cell.chart.timeScale().options && cell.chart.timeScale().options().barSpacing) || 6;
-
-                if (pt.time < firstT) {
-                    const avgStep = (cell.visibleCandles.length > 1) ? (cell.visibleCandles[1].time - firstT) : 60;
-                    const barsDiff = (firstT - pt.time) / (avgStep || 1);
-                    x = firstX - barsDiff * barSpacing;
-                } else if (pt.time > lastT) {
-                    const avgStep = (cell.visibleCandles.length > 1) ? (lastT - cell.visibleCandles[cell.visibleCandles.length - 2].time) : 60;
-                    const barsDiff = (pt.time - lastT) / (avgStep || 1);
-                    x = lastX + barsDiff * barSpacing;
-                } else {
-                    let leftC = cell.visibleCandles[0];
-                    let rightC = cell.visibleCandles[cell.visibleCandles.length - 1];
-                    for (let i = 0; i < cell.visibleCandles.length - 1; i++) {
-                        if (cell.visibleCandles[i].time <= pt.time && cell.visibleCandles[i+1].time >= pt.time) {
-                            leftC = cell.visibleCandles[i];
-                            rightC = cell.visibleCandles[i+1];
-                            break;
-                        }
-                    }
-                    const lx = cell.chart.timeScale().timeToCoordinate(leftC.time) || 0;
-                    const rx = cell.chart.timeScale().timeToCoordinate(rightC.time) || w;
-                    const factor = (rightC.time > leftC.time) ? (pt.time - leftC.time) / (rightC.time - leftC.time) : 0;
-                    x = lx + factor * (rx - lx);
-                }
-            } else {
-                x = 0;
-            }
-        }
-
-        if (y === null) {
-            y = 50;
-        }
+        const h = (cell.vpCanvas ? cell.vpCanvas.height : (cell.container ? cell.container.clientHeight : 400));
+        const x = this.timeToScreenX(cell, pt.time, pt.logicalOffset, pt.x, w);
+        const y = this.priceToScreenY(cell, pt.price, pt.y, h);
         return { x, y };
     }
 
     getDrawingDeleteBtnPos(d, cell, toScreen, canvasW, canvasH) {
         if (!d || !d.points || d.points.length === 0) return null;
         const screenFn = toScreen || ((pt) => this.drawingCoordToScreen(cell, pt, canvasW));
+
         if (d.type === 'text') {
             const p = screenFn(d.points[0]);
             const fontSize = d.fontSize || 14;
@@ -6021,18 +6749,38 @@ class ChartEngine {
             const boxH = fontSize + 16;
             const boxX = p.x + 8;
             const boxY = p.y - boxH - 6;
-            return { x: boxX + approxW + 4, y: boxY - 4, r: 9 };
+            const safeX = Math.max(25, Math.min(canvasW - 25, boxX + approxW + 18));
+            const safeY = Math.max(25, Math.min(canvasH - 25, boxY - 10));
+            return { x: safeX, y: safeY, anchorX: boxX + approxW, anchorY: boxY, r: 8.5 };
         }
-        if (d.type === 'trendline' && d.points.length >= 2) {
+        if ((d.type === 'trendline' || d.type === 'arrow') && d.points.length >= 2) {
+            const p1 = screenFn(d.points[0]);
             const p2 = screenFn(d.points[1]);
-            return { x: p2.x + 14, y: p2.y - 14, r: 9 };
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const nx = -dy / len;
+            const ny = dx / len;
+            const targetX = p2.x + (dx / len) * 18 + nx * 22;
+            const targetY = p2.y + (dy / len) * 18 + ny * 22;
+            const safeX = Math.max(25, Math.min(canvasW - 25, targetX));
+            const safeY = Math.max(25, Math.min(canvasH - 25, targetY));
+            return { x: safeX, y: safeY, anchorX: p2.x, anchorY: p2.y, r: 8.5 };
+        }
+        if (d.type === 'pen' && d.points.length >= 1) {
+            const pLast = screenFn(d.points[d.points.length - 1]);
+            const safeX = Math.max(25, Math.min(canvasW - 25, pLast.x + 28));
+            const safeY = Math.max(25, Math.min(canvasH - 25, pLast.y - 22));
+            return { x: safeX, y: safeY, anchorX: pLast.x, anchorY: pLast.y, r: 8.5 };
         }
         if (d.type === 'rectangle' && d.points.length >= 2) {
             const p1 = screenFn(d.points[0]);
             const p2 = screenFn(d.points[1]);
             const maxX = d.extendRight ? canvasW - 20 : Math.max(p1.x, p2.x);
             const minY = Math.min(p1.y, p2.y);
-            return { x: maxX + 10, y: minY - 10, r: 9 };
+            const safeX = Math.max(25, Math.min(canvasW - 25, maxX + 26));
+            const safeY = Math.max(25, Math.min(canvasH - 25, minY - 18));
+            return { x: safeX, y: safeY, anchorX: maxX, anchorY: minY, r: 8.5 };
         }
         if ((d.type === 'long_position' || d.type === 'short_position') && d.points.length >= 3) {
             const p0 = screenFn(d.points[0]);
@@ -6040,36 +6788,40 @@ class ChartEngine {
             const p2 = screenFn(d.points[2]);
             const rightX = Math.max(p0.x, p1.x);
             const topY = Math.min(p0.y, p1.y, p2.y);
-            // วางปุ่มลบ [✕] สีแดงที่มุมบนขวาของกล่อง Position ตามภาพ และจำกัดให้อยู่ในหน้าจอเสมอ
-            const safeX = Math.max(50, Math.min(canvasW - 20, rightX - 14));
-            const safeY = Math.max(20, Math.min(canvasH - 20, topY + 14));
-            return { x: safeX, y: safeY, r: 12 };
+            const safeX = Math.max(30, Math.min(canvasW - 25, rightX + 26));
+            const safeY = Math.max(25, Math.min(canvasH - 25, topY - 18));
+            return { x: safeX, y: safeY, anchorX: rightX, anchorY: topY, r: 8.5 };
         }
         if (d.type === 'path' && d.points.length >= 2) {
             const lastPt = d.points[d.points.length - 1];
             const p = screenFn(lastPt);
-            return { x: p.x + 14, y: p.y - 14, r: 9 };
+            const safeX = Math.max(25, Math.min(canvasW - 25, p.x + 28));
+            const safeY = Math.max(25, Math.min(canvasH - 25, p.y - 22));
+            return { x: safeX, y: safeY, anchorX: p.x, anchorY: p.y, r: 8.5 };
         }
         if (d.type === 'horzline') {
             const pt = d.points[0];
             let y = cell.candleSeries ? cell.candleSeries.priceToCoordinate(pt.price) : null;
             if (y === null) y = screenFn(pt).y;
-            return { x: Math.max(60, canvasW - 140), y: y - 14, r: 9 };
+            const x = Math.max(80, canvasW - 160);
+            return { x: x, y: y - 24, anchorX: x, anchorY: y, r: 8.5 };
         }
         if (d.type === 'horzray') {
             const p1 = screenFn(d.points[0]);
-            return { x: p1.x + 20, y: p1.y - 16, r: 9 };
+            const safeX = Math.max(25, Math.min(canvasW - 25, p1.x + 36));
+            const safeY = Math.max(25, Math.min(canvasH - 25, p1.y - 24));
+            return { x: safeX, y: safeY, anchorX: p1.x, anchorY: p1.y, r: 8.5 };
         }
         if (d.type === 'vertline') {
             const p1 = screenFn(d.points[0]);
-            return { x: p1.x + 16, y: 40, r: 9 };
+            return { x: p1.x + 28, y: 35, anchorX: p1.x, anchorY: 35, r: 8.5 };
         }
         const p0 = screenFn(d.points[0]);
-        return { x: p0.x + 14, y: p0.y - 14, r: 9 };
+        return { x: p0.x + 28, y: p0.y - 22, anchorX: p0.x, anchorY: p0.y, r: 8.5 };
     }
 
     getDrawingDeleteButtonHit(cell, px, py) {
-        if (!cell || !cell.drawings) return null;
+        if (!cell || !cell.drawings || cell.hideDrawings) return null;
         const canvasW = (cell.vpCanvas && cell.vpCanvas.width) || (cell.container ? cell.container.clientWidth : 800);
         const canvasH = (cell.vpCanvas && cell.vpCanvas.height) || (cell.container ? cell.container.clientHeight : 600);
         const toScreen = (pt) => this.drawingCoordToScreen(cell, pt, canvasW);
@@ -6080,15 +6832,18 @@ class ChartEngine {
             const isSelected = (d.selected || cell.selectedDrawingId === d.id);
             if (!isSelected) continue;
             const btn = this.getDrawingDeleteBtnPos(d, cell, toScreen, canvasW, canvasH);
-            if (btn && Math.hypot(px - btn.x, py - btn.y) <= btn.r + 10) {
+            if (btn && Math.hypot(px - btn.x, py - btn.y) <= (btn.r || 8.5) + 4) {
+                if (d.locked) {
+                    return { type: 'TOGGLE_LOCK', cellIndex: cell.index, drawingId: d.id, drawing: d };
+                }
                 return { type: 'DELETE_DRAWING', cellIndex: cell.index, drawingId: d.id, drawing: d };
             }
         }
         return null;
     }
 
-    getDrawingHitTest(cell, px, py) {
-        if (!cell || !cell.drawings || cell.drawings.length === 0) return null;
+    getDrawingHitTest(cell, px, py, isEraser = false) {
+        if (!cell || !cell.drawings || cell.drawings.length === 0 || cell.hideDrawings) return null;
         const canvasW = (cell.vpCanvas && cell.vpCanvas.width) || (cell.container ? cell.container.clientWidth : 800);
         const toScreen = (pt) => this.drawingCoordToScreen(cell, pt, canvasW);
 
@@ -6117,44 +6872,64 @@ class ChartEngine {
             const d = cell.drawings[i];
             if (!d || !d.points || d.points.length === 0) continue;
 
-            if (d.type === 'trendline' && d.points.length >= 2) {
+            if ((d.type === 'trendline' || d.type === 'arrow') && d.points.length >= 2) {
+                const tol = isEraser ? 28 : 14;
                 const p1 = toScreen(d.points[0]);
                 const p2 = toScreen(d.points[1]);
-                if (distToSegment(px, py, p1.x, p1.y, p2.x, p2.y) <= 12) return d;
+                if (distToSegment(px, py, p1.x, p1.y, p2.x, p2.y) <= tol) return d;
+                if (Math.hypot(px - p1.x, py - p1.y) <= (tol + 4) || Math.hypot(px - p2.x, py - p2.y) <= (tol + 4)) return d;
+            } else if (d.type === 'pen') {
+                const penTol = isEraser ? 32 : 16;
+                if (d.points.length === 1) {
+                    const p1 = toScreen(d.points[0]);
+                    if (Math.hypot(px - p1.x, py - p1.y) <= penTol) return d;
+                } else if (d.points.length >= 2) {
+                    for (let j = 0; j < d.points.length - 1; j++) {
+                        const p1 = toScreen(d.points[j]);
+                        const p2 = toScreen(d.points[j + 1]);
+                        if (distToSegment(px, py, p1.x, p1.y, p2.x, p2.y) <= penTol) return d;
+                    }
+                }
             } else if (d.type === 'horzline') {
                 const pt = d.points[0];
                 let y = cell.candleSeries.priceToCoordinate(pt.price);
                 if (y === null) y = toScreen(pt).y;
-                if (Math.abs(py - y) <= 12) return d;
+                const tol = isEraser ? 24 : 12;
+                if (Math.abs(py - y) <= tol) return d;
             } else if (d.type === 'horzray') {
                 const p1 = toScreen(d.points[0]);
-                if (px >= p1.x - 10 && Math.abs(py - p1.y) <= 12) return d;
+                const tol = isEraser ? 24 : 12;
+                if (px >= p1.x - tol && Math.abs(py - p1.y) <= tol) return d;
             } else if (d.type === 'vertline') {
                 const p1 = toScreen(d.points[0]);
-                if (Math.abs(px - p1.x) <= 12) return d;
+                const tol = isEraser ? 24 : 12;
+                if (Math.abs(px - p1.x) <= tol) return d;
             } else if (d.type === 'rectangle' && d.points.length >= 2) {
                 const p1 = toScreen(d.points[0]);
                 const p2 = toScreen(d.points[1]);
-                const minX = Math.min(p1.x, p2.x) - 8;
-                let maxX = Math.max(p1.x, p2.x) + 8;
+                const pad = isEraser ? 16 : 8;
+                const minX = Math.min(p1.x, p2.x) - pad;
+                let maxX = Math.max(p1.x, p2.x) + pad;
                 if (d.extendRight) maxX = canvasW;
-                const minY = Math.min(p1.y, p2.y) - 8;
-                const maxY = Math.max(p1.y, p2.y) + 8;
+                const minY = Math.min(p1.y, p2.y) - pad;
+                const maxY = Math.max(p1.y, p2.y) + pad;
                 if (px >= minX && px <= maxX && py >= minY && py <= maxY) return d;
             } else if ((d.type === 'long_position' || d.type === 'short_position') && d.points.length >= 3) {
                 const p0 = toScreen(d.points[0]);
                 const p1 = toScreen(d.points[1]);
                 const p2 = toScreen(d.points[2]);
-                const minX = Math.min(p0.x, p1.x) - 8;
-                const maxX = Math.max(p0.x, p1.x) + 8;
-                const minY = Math.min(p0.y, p1.y, p2.y) - 8;
-                const maxY = Math.max(p0.y, p1.y, p2.y) + 8;
+                const pad = isEraser ? 16 : 8;
+                const minX = Math.min(p0.x, p1.x) - pad;
+                const maxX = Math.max(p0.x, p1.x) + pad;
+                const minY = Math.min(p0.y, p1.y, p2.y) - pad;
+                const maxY = Math.max(p0.y, p1.y, p2.y) + pad;
                 if (px >= minX && px <= maxX && py >= minY && py <= maxY) return d;
             } else if (d.type === 'path' && d.points.length >= 2) {
+                const tol = isEraser ? 26 : 12;
                 for (let j = 0; j < d.points.length - 1; j++) {
                     const p1 = toScreen(d.points[j]);
                     const p2 = toScreen(d.points[j + 1]);
-                    if (distToSegment(px, py, p1.x, p1.y, p2.x, p2.y) <= 12) return d;
+                    if (distToSegment(px, py, p1.x, p1.y, p2.x, p2.y) <= tol) return d;
                 }
             } else if (d.type === 'text') {
                 const p = toScreen(d.points[0]);
@@ -6164,9 +6939,10 @@ class ChartEngine {
                 const boxH = fontSize + 16;
                 const boxX = p.x + 8;
                 const boxY = p.y - boxH - 6;
-                const inBox = (px >= boxX - 10 && px <= boxX + approxW + 10 && py >= boxY - 10 && py <= boxY + boxH + 10);
-                const nearAnchor = (Math.hypot(px - p.x, py - p.y) <= 22);
-                const nearLine = distToSegment(px, py, p.x, p.y, boxX, boxY + boxH / 2) <= 12;
+                const pad = isEraser ? 16 : 10;
+                const inBox = (px >= boxX - pad && px <= boxX + approxW + pad && py >= boxY - pad && py <= boxY + boxH + pad);
+                const nearAnchor = (Math.hypot(px - p.x, py - p.y) <= (isEraser ? 28 : 22));
+                const nearLine = distToSegment(px, py, p.x, p.y, boxX, boxY + boxH / 2) <= (isEraser ? 20 : 12);
                 if (inBox || nearAnchor || nearLine) return d;
             }
         }
@@ -6249,7 +7025,10 @@ class ChartEngine {
             });
         }
 
-        const allDrawings = [...(cell.drawings || [])];
+        const allDrawings = [];
+        if (!cell.hideDrawings && cell.drawings) {
+            allDrawings.push(...cell.drawings);
+        }
         if (cell.currentDrawing) {
             allDrawings.push(cell.currentDrawing);
         }
@@ -6262,8 +7041,8 @@ class ChartEngine {
 
             ctx.save();
 
-            // 1. เส้นแนวโน้ม (Trendline)
-            if (d.type === 'trendline' && d.points.length >= 2) {
+            // 1. เส้นแนวโน้ม (Trendline) & 1.1 ลูกศร (Arrow Tool)
+            if ((d.type === 'trendline' || d.type === 'arrow') && d.points.length >= 2) {
                 const p1 = toScreen(d.points[0]);
                 const p2 = toScreen(d.points[1]);
 
@@ -6277,22 +7056,161 @@ class ChartEngine {
                 ctx.stroke();
 
                 ctx.setLineDash([]);
+
+                // วาดหัวลูกศรสำหรับ Arrow Tool ที่จุด B (p2)
+                if (d.type === 'arrow') {
+                    const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+                    const headLen = isSelected ? 16 : 14;
+                    ctx.fillStyle = isSelected ? '#a855f7' : color;
+                    ctx.beginPath();
+                    ctx.moveTo(p2.x, p2.y);
+                    ctx.lineTo(p2.x - headLen * Math.cos(angle - Math.PI / 6), p2.y - headLen * Math.sin(angle - Math.PI / 6));
+                    ctx.lineTo(p2.x - headLen * Math.cos(angle + Math.PI / 6), p2.y - headLen * Math.sin(angle + Math.PI / 6));
+                    ctx.closePath();
+                    ctx.fill();
+                }
+
+                // จุด Handle A (จุดเริ่ม)
                 ctx.fillStyle = isSelected ? '#a855f7' : color;
                 ctx.beginPath();
-                ctx.arc(p1.x, p1.y, isSelected ? 5 : 4, 0, Math.PI * 2);
+                ctx.arc(p1.x, p1.y, isSelected ? 6 : 4, 0, Math.PI * 2);
                 ctx.fill();
-                ctx.beginPath();
-                ctx.arc(p2.x, p2.y, isSelected ? 5 : 4, 0, Math.PI * 2);
-                ctx.fill();
+
+                // จุด Handle B (จุดปลาย) ถ้าไม่ใช่ arrow หรือเมื่อ selected
+                if (d.type !== 'arrow' || isSelected) {
+                    ctx.beginPath();
+                    ctx.arc(p2.x, p2.y, isSelected ? 6 : 4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
 
                 if (isSelected) {
                     ctx.strokeStyle = '#ffffff';
-                    ctx.lineWidth = 1.5;
+                    ctx.lineWidth = 1.8;
                     ctx.beginPath();
-                    ctx.arc(p1.x, p1.y, 6, 0, Math.PI * 2);
+                    ctx.arc(p1.x, p1.y, 6.5, 0, Math.PI * 2);
                     ctx.stroke();
                     ctx.beginPath();
-                    ctx.arc(p2.x, p2.y, 6, 0, Math.PI * 2);
+                    ctx.arc(p2.x, p2.y, 6.5, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    // ป้ายบอกจุด A และ B
+                    ctx.font = 'bold 9px monospace';
+                    ctx.fillStyle = '#ffffff';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('A', p1.x, p1.y - 12);
+                    ctx.fillText('B', p2.x, p2.y - 12);
+                }
+
+                // ข้อความบนเส้นแนวโน้ม/ลูกศร (Text Along Line Slope - Pro Style Without Box)
+                if (d.text && d.text.trim()) {
+                    const midX = (p1.x + p2.x) / 2;
+                    const midY = (p1.y + p2.y) / 2;
+                    const textStr = d.text.trim();
+
+                    // คำนวณมุมความชันของเส้น (Line Angle / Slope)
+                    let angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+                    // ปรับมุมให้อ่านง่ายเสมอจากซ้ายไปขวา (Never upside down)
+                    if (angle > Math.PI / 2) {
+                        angle -= Math.PI;
+                    } else if (angle < -Math.PI / 2) {
+                        angle += Math.PI;
+                    }
+
+                    ctx.save();
+                    ctx.translate(midX, midY);
+                    ctx.rotate(angle);
+                    ctx.font = 'bold 11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'bottom';
+
+                    // เงาข้อความคมชัดเพื่อให้อ่านง่ายบนทุกกราฟ โดยไม่ต้องมีกรอบสี่เหลี่ยม
+                    ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+                    ctx.shadowBlur = 4;
+                    ctx.shadowOffsetX = 0;
+                    ctx.shadowOffsetY = 1;
+                    ctx.fillStyle = isSelected ? '#e9d5ff' : (d.color || color || '#38bdf8');
+                    ctx.fillText(textStr, 0, -4);
+                    ctx.restore();
+                }
+            }
+
+            // 1.2 ปากกาวาดเขียนอิสระ (Pen / Tablet Handwriting & Freehand Brush)
+            else if (d.type === 'pen' && d.points && d.points.length > 0) {
+                const screenPts = d.points.map(pt => toScreen(pt));
+                const penColor = d.color || '#f59e0b';
+                const penWidth = d.lineWidth || 2.5;
+
+                // จุดเดี่ยว (Single Tap / Dot เช่น สระ วรรณยุกต์ จุดทศนิยม)
+                if (screenPts.length === 1) {
+                    const pt0 = screenPts[0];
+                    if (isSelected && !isPreview) {
+                        ctx.save();
+                        ctx.beginPath();
+                        ctx.arc(pt0.x, pt0.y, (penWidth / 2) + 4, 0, Math.PI * 2);
+                        ctx.fillStyle = 'rgba(168, 85, 247, 0.4)';
+                        ctx.fill();
+                        ctx.restore();
+                    }
+                    ctx.beginPath();
+                    ctx.arc(pt0.x, pt0.y, Math.max(1.8, penWidth / 2), 0, Math.PI * 2);
+                    ctx.fillStyle = isSelected ? '#a855f7' : penColor;
+                    ctx.fill();
+                } else if (screenPts.length === 2) {
+                    // 2 จุด: เส้นตรงหัวมน
+                    if (isSelected && !isPreview) {
+                        ctx.save();
+                        ctx.strokeStyle = 'rgba(168, 85, 247, 0.4)';
+                        ctx.lineWidth = penWidth + 6;
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
+                        ctx.beginPath();
+                        ctx.moveTo(screenPts[0].x, screenPts[0].y);
+                        ctx.lineTo(screenPts[1].x, screenPts[1].y);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                    ctx.strokeStyle = isSelected ? '#a855f7' : penColor;
+                    ctx.lineWidth = isSelected ? penWidth + 1 : penWidth;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.beginPath();
+                    ctx.moveTo(screenPts[0].x, screenPts[0].y);
+                    ctx.lineTo(screenPts[1].x, screenPts[1].y);
+                    ctx.stroke();
+                } else {
+                    // 3 จุดขึ้นไป: Midpoint Quadratic Bezier Spline เพื่อลายมือที่โค้งมน นุ่มนวล เสมือนเขียนด้วยปากกาหมึกจริง
+                    if (isSelected && !isPreview) {
+                        ctx.save();
+                        ctx.strokeStyle = 'rgba(168, 85, 247, 0.4)';
+                        ctx.lineWidth = penWidth + 6;
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
+                        ctx.beginPath();
+                        ctx.moveTo(screenPts[0].x, screenPts[0].y);
+                        for (let i = 1; i < screenPts.length - 1; i++) {
+                            const midX = (screenPts[i].x + screenPts[i + 1].x) / 2;
+                            const midY = (screenPts[i].y + screenPts[i + 1].y) / 2;
+                            ctx.quadraticCurveTo(screenPts[i].x, screenPts[i].y, midX, midY);
+                        }
+                        ctx.lineTo(screenPts[screenPts.length - 1].x, screenPts[screenPts.length - 1].y);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+
+                    ctx.strokeStyle = isSelected ? '#a855f7' : penColor;
+                    ctx.lineWidth = isSelected ? penWidth + 1 : penWidth;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+
+                    ctx.beginPath();
+                    ctx.moveTo(screenPts[0].x, screenPts[0].y);
+                    for (let i = 1; i < screenPts.length - 1; i++) {
+                        const midX = (screenPts[i].x + screenPts[i + 1].x) / 2;
+                        const midY = (screenPts[i].y + screenPts[i + 1].y) / 2;
+                        ctx.quadraticCurveTo(screenPts[i].x, screenPts[i].y, midX, midY);
+                    }
+                    ctx.lineTo(screenPts[screenPts.length - 1].x, screenPts[screenPts.length - 1].y);
                     ctx.stroke();
                 }
             }
@@ -6324,8 +7242,7 @@ class ChartEngine {
                 ctx.fillStyle = isSelected ? 'rgba(168, 85, 247, 0.95)' : 'rgba(15, 23, 42, 0.9)';
                 ctx.strokeStyle = isSelected ? '#ffffff' : color;
                 ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 4);
+                this.drawSafeRoundedRect(ctx, badgeX, badgeY, badgeW, badgeH, 4);
                 ctx.fill();
                 ctx.stroke();
 
@@ -6333,6 +7250,22 @@ class ChartEngine {
                 ctx.textAlign = 'left';
                 ctx.textBaseline = 'middle';
                 ctx.fillText(priceStr, badgeX + 6, y);
+
+                // ข้อความบนเส้นแนวนอน (Text Along Horizontal Line - Pro Style Without Box)
+                if (d.text && d.text.trim()) {
+                    const textStr = d.text.trim();
+                    ctx.save();
+                    ctx.font = 'bold 11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+                    ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+                    ctx.shadowBlur = 4;
+                    ctx.shadowOffsetX = 0;
+                    ctx.shadowOffsetY = 1;
+                    ctx.fillStyle = isSelected ? '#e9d5ff' : (d.color || color || '#38bdf8');
+                    ctx.textAlign = 'left';
+                    ctx.textBaseline = 'bottom';
+                    ctx.fillText(textStr, 40, y - 4);
+                    ctx.restore();
+                }
             }
 
             // 3. เรย์แนวนอน (Horizontal Ray)
@@ -6374,6 +7307,22 @@ class ChartEngine {
                 ctx.textAlign = 'left';
                 ctx.textBaseline = 'middle';
                 ctx.fillText(priceStr, badgeX + 5, p1.y);
+
+                // ข้อความบนเรย์แนวนอน (Text Along Horizontal Ray - Pro Style Without Box)
+                if (d.text && d.text.trim()) {
+                    const textStr = d.text.trim();
+                    ctx.save();
+                    ctx.font = 'bold 11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+                    ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+                    ctx.shadowBlur = 4;
+                    ctx.shadowOffsetX = 0;
+                    ctx.shadowOffsetY = 1;
+                    ctx.fillStyle = isSelected ? '#e9d5ff' : (d.color || color || '#38bdf8');
+                    ctx.textAlign = 'left';
+                    ctx.textBaseline = 'bottom';
+                    ctx.fillText(textStr, p1.x + 24, p1.y - 4);
+                    ctx.restore();
+                }
             }
 
             // 4. เส้นแนวตั้ง (Vertical Line)
@@ -6411,6 +7360,24 @@ class ChartEngine {
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillText(timeStr, p1.x, badgeY + badgeH / 2);
+
+                // ข้อความบนเส้นแนวตั้ง (Text Along Vertical Line - Pro Style Without Box)
+                if (d.text && d.text.trim()) {
+                    const textStr = d.text.trim();
+                    ctx.save();
+                    ctx.translate(p1.x, 60);
+                    ctx.rotate(-Math.PI / 2);
+                    ctx.font = 'bold 11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+                    ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+                    ctx.shadowBlur = 4;
+                    ctx.shadowOffsetX = 0;
+                    ctx.shadowOffsetY = 1;
+                    ctx.fillStyle = isSelected ? '#e9d5ff' : (d.color || color || '#38bdf8');
+                    ctx.textAlign = 'left';
+                    ctx.textBaseline = 'bottom';
+                    ctx.fillText(textStr, 0, -4);
+                    ctx.restore();
+                }
             }
 
             // 5. Rectangle (Demand/Supply / Order Block Zone)
@@ -6666,6 +7633,37 @@ class ChartEngine {
                         ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
                         ctx.fill();
                     });
+
+                    // ข้อความบนเส้นทาง (Text Along Path Segment - Pro Style Without Box)
+                    if (d.text && d.text.trim() && screenPoints.length >= 2) {
+                        const midSegIdx = Math.floor((screenPoints.length - 1) / 2);
+                        const pA = screenPoints[midSegIdx];
+                        const pB = screenPoints[midSegIdx + 1];
+                        const midX = (pA.x + pB.x) / 2;
+                        const midY = (pA.y + pB.y) / 2;
+                        const textStr = d.text.trim();
+
+                        let angle = Math.atan2(pB.y - pA.y, pB.x - pA.x);
+                        if (angle > Math.PI / 2) {
+                            angle -= Math.PI;
+                        } else if (angle < -Math.PI / 2) {
+                            angle += Math.PI;
+                        }
+
+                        ctx.save();
+                        ctx.translate(midX, midY);
+                        ctx.rotate(angle);
+                        ctx.font = 'bold 11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+                        ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+                        ctx.shadowBlur = 4;
+                        ctx.shadowOffsetX = 0;
+                        ctx.shadowOffsetY = 1;
+                        ctx.fillStyle = isSelected ? '#e9d5ff' : (d.color || color || '#38bdf8');
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'bottom';
+                        ctx.fillText(textStr, 0, -4);
+                        ctx.restore();
+                    }
                 }
             }
 
@@ -6725,41 +7723,99 @@ class ChartEngine {
                 ctx.fillText(textStr, boxX + 9, boxY + boxH / 2);
             }
 
-            // 8. ปุ่ม [✕] สำหรับลบภาพวาดอิสระเมื่อเครื่องมือนั้น Active อยู่
+            // 7.9 สัญลักษณ์แม่กุญแจ 🔒 ขนาดกะทัดรัด เมื่อภาพวาดถูกล็อคตำแหน่งไว้
+            if (d.locked && !isSelected && !isPreview) {
+                const p0 = toScreen(d.points[0]);
+                if (p0 && p0.x >= -30 && p0.x <= canvasW + 30 && p0.y >= -30 && p0.y <= canvasH + 30) {
+                    ctx.save();
+                    ctx.font = '12px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+                    ctx.shadowBlur = 4;
+                    ctx.fillText('🔒', p0.x - 12, p0.y - 12);
+                    ctx.restore();
+                }
+            }
+
+            // 8. ปุ่ม [✕] หรือปุ่มแม่กุญแจ [🔒] สำหรับภาพวาดเมื่อเครื่องมือนั้น Active อยู่ (สถานะปกติโปร่งแสงจางๆ + เส้นประเชื่อมโยง / Hover สว่างเด่น)
             const shouldShowDeleteBtn = (isSelected && !isPreview);
             if (shouldShowDeleteBtn) {
                 const btn = this.getDrawingDeleteBtnPos(d, cell, toScreen, canvasW, canvasH);
                 if (btn) {
-                    ctx.save();
-                    // เงาปุ่ม
-                    ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
-                    ctx.shadowBlur = 4;
-                    ctx.shadowOffsetX = 0;
-                    ctx.shadowOffsetY = 1.5;
+                    const isHovered = (cell.hoveredDeleteBtnId === d.id);
+                    const btnRadius = isHovered ? 10 : (btn.r || 8.5);
+                    const isLocked = !!d.locked;
 
-                    // วงกลมสีแดงสด
-                    ctx.fillStyle = '#ef4444';
+                    ctx.save();
+
+                    // 1. วาดเส้นประเชื่อมโยงไปยัง Handle/วัตถุ เพื่อให้เข้าใจว่าเป็นส่วนเดียวกัน แม้จะขยับห่างออกมา
+                    if (btn.anchorX !== undefined && btn.anchorY !== undefined) {
+                        ctx.strokeStyle = isLocked 
+                            ? (isHovered ? 'rgba(245, 158, 11, 0.75)' : 'rgba(245, 158, 11, 0.35)') 
+                            : (isHovered ? 'rgba(239, 68, 68, 0.65)' : 'rgba(239, 68, 68, 0.28)');
+                        ctx.lineWidth = isHovered ? 1.4 : 1;
+                        ctx.setLineDash([3, 3]);
+                        ctx.beginPath();
+                        ctx.moveTo(btn.anchorX, btn.anchorY);
+                        ctx.lineTo(btn.x, btn.y);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+
+                        // จุด Anchor เล็กๆ ที่ตำแหน่งต้นทาง
+                        ctx.fillStyle = isLocked 
+                            ? (isHovered ? 'rgba(245, 158, 11, 0.85)' : 'rgba(245, 158, 11, 0.4)') 
+                            : (isHovered ? 'rgba(239, 68, 68, 0.7)' : 'rgba(239, 68, 68, 0.35)');
+                        ctx.beginPath();
+                        ctx.arc(btn.anchorX, btn.anchorY, 2.5, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+
+                    // 2. เงาปุ่ม
+                    if (isHovered) {
+                        ctx.shadowColor = isLocked ? 'rgba(245, 158, 11, 0.75)' : 'rgba(239, 68, 68, 0.65)';
+                        ctx.shadowBlur = 8;
+                    } else {
+                        ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+                        ctx.shadowBlur = 3;
+                    }
+                    ctx.shadowOffsetX = 0;
+                    ctx.shadowOffsetY = 1;
+
+                    // 3. วงกลมพื้นหลังปุ่ม (ล็อค: สีส้มทอง / ปกติ: สีแดง)
+                    ctx.fillStyle = isLocked 
+                        ? (isHovered ? '#f59e0b' : 'rgba(245, 158, 11, 0.35)') 
+                        : (isHovered ? '#ef4444' : 'rgba(239, 68, 68, 0.3)');
                     ctx.beginPath();
-                    ctx.arc(btn.x, btn.y, btn.r, 0, Math.PI * 2);
+                    ctx.arc(btn.x, btn.y, btnRadius, 0, Math.PI * 2);
                     ctx.fill();
 
-                    // เส้นขอบขาว
+                    // 4. เส้นขอบปุ่ม
                     ctx.shadowColor = 'transparent';
-                    ctx.strokeStyle = '#ffffff';
-                    ctx.lineWidth = 1.6;
+                    ctx.strokeStyle = isLocked 
+                        ? (isHovered ? '#ffffff' : 'rgba(245, 158, 11, 0.8)') 
+                        : (isHovered ? '#ffffff' : 'rgba(239, 68, 68, 0.7)');
+                    ctx.lineWidth = isHovered ? 1.5 : 1.1;
                     ctx.stroke();
 
-                    // กากบาทสีขาว ✕
-                    ctx.strokeStyle = '#ffffff';
-                    ctx.lineWidth = 1.8;
-                    ctx.lineCap = 'round';
-                    const sz = 3.5;
-                    ctx.beginPath();
-                    ctx.moveTo(btn.x - sz, btn.y - sz);
-                    ctx.lineTo(btn.x + sz, btn.y + sz);
-                    ctx.moveTo(btn.x + sz, btn.y - sz);
-                    ctx.lineTo(btn.x - sz, btn.y + sz);
-                    ctx.stroke();
+                    // 5. สัญลักษณ์: ถ้า locked แสดงรูปแม่กุญแจ 🔒 / ถ้าไม่ locked แสดงกากบาทสีขาว ✕
+                    if (isLocked) {
+                        ctx.font = '10px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText('🔒', btn.x, btn.y);
+                    } else {
+                        ctx.strokeStyle = isHovered ? '#ffffff' : 'rgba(255, 255, 255, 0.85)';
+                        ctx.lineWidth = isHovered ? 1.8 : 1.4;
+                        ctx.lineCap = 'round';
+                        const sz = isHovered ? 3.8 : 3.2;
+                        ctx.beginPath();
+                        ctx.moveTo(btn.x - sz, btn.y - sz);
+                        ctx.lineTo(btn.x + sz, btn.y + sz);
+                        ctx.moveTo(btn.x + sz, btn.y - sz);
+                        ctx.lineTo(btn.x - sz, btn.y + sz);
+                        ctx.stroke();
+                    }
 
                     ctx.restore();
                 }

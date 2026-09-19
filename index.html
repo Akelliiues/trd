@@ -13,10 +13,10 @@
     <meta name="description"
         content="TradingTools Professional Workstation - Live MT5 Charts, Multi-Chart Grid, Volume Profile, Trade Replay & Journal">
     <title>TradingTools Workstation & Trade Journal</title>
-    <link rel="manifest" href="manifest.json?v=2.6.0">
+    <link rel="manifest" href="manifest.json?v=2.6.7">
     <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-    <link rel="stylesheet" href="styles.css?v=2.6.0">
+    <link rel="stylesheet" href="styles.css?v=2.6.7">
     <!-- Local Standalone Chart Engine (Ultra-fast & Offline ready) -->
     <script src="js/lightweight-charts.js?v=2.6.0"></script>
     <!-- Anti-Zoom & PWA Installed State Detection -->
@@ -592,7 +592,24 @@
                                     <div class="tool-card-name-row">
                                         <span class="tool-card-name">เส้นแนวโน้ม (Trendline)</span>
                                     </div>
-                                    <div class="tool-card-desc">คลิกจุด A แล้วลากหรือคลิกจุด B ล็อคพิกัดราคา</div>
+                                    <div class="tool-card-desc">ลาก A ไป B ปรับจุดอิสระ & ใส่ข้อความกลางเส้นได้</div>
+                                </div>
+                            </button>
+
+                            <!-- Arrow Tool -->
+                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-arrow"
+                                data-tool="arrow" onclick="window.app.selectToolFromPalette('arrow')">
+                                <div class="tool-card-icon" style="color: #38bdf8;">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <line x1="5" y1="19" x2="18" y2="6" />
+                                        <polyline points="10 6 18 6 18 14" />
+                                    </svg>
+                                </div>
+                                <div class="tool-card-info">
+                                    <div class="tool-card-name-row">
+                                        <span class="tool-card-name">ลูกศร (Arrow Tool)</span>
+                                    </div>
+                                    <div class="tool-card-desc">ลาก A ไป B มีหัวลูกศรชี้ ปรับจุด A/B และใส่ข้อความได้</div>
                                 </div>
                             </button>
 
@@ -651,8 +668,27 @@
 
                     <!-- Section 3: โซนราคา & ข้อความ (Zones & Notes) -->
                     <div class="tools-palette-section">
-                        <div class="tools-section-title">📦 โซนราคา & ข้อความ (Zones & Notes)</div>
+                        <div class="tools-section-title">📦 โซนราคา & การวาดเขียน (Zones, Brush & Notes)</div>
                         <div class="tools-section-grid">
+                            <!-- Pen / Brush Tool -->
+                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-pen"
+                                data-tool="pen" onclick="window.app.selectToolFromPalette('pen')">
+                                <div class="tool-card-icon" style="color: #f59e0b;">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M12 19l7-7 3 3-7 7-3-3z" />
+                                        <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+                                        <path d="M2 2l7.586 7.586" />
+                                        <circle cx="11" cy="11" r="2" />
+                                    </svg>
+                                </div>
+                                <div class="tool-card-info">
+                                    <div class="tool-card-name-row">
+                                        <span class="tool-card-name">ปากกาวาดอิสระ (Pen / Tablet)</span>
+                                    </div>
+                                    <div class="tool-card-desc">วาดจดบันทึกอิสระบนแท็บเล็ต/เมาส์ ลบและเปลี่ยนสีได้ จำค่าถาวร</div>
+                                </div>
+                            </button>
+
                             <!-- Rectangle -->
                             <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-rectangle"
                                 data-tool="rectangle" onclick="window.app.selectToolFromPalette('rectangle')">
@@ -705,6 +741,25 @@
                                         <span class="tool-card-name">ข้อความ (Text Annotation)</span>
                                     </div>
                                     <div class="tool-card-desc">พิมพ์บันทึกข้อความติดพิกัดแท่งเทียน</div>
+                                </div>
+                            </button>
+
+                            <!-- Eraser Tool (ยางลบลบทุกเครื่องมือ) -->
+                            <button type="button" class="tool-palette-card draw-tool-item" id="draw-btn-eraser"
+                                data-tool="eraser" onclick="window.app.selectToolFromPalette('eraser')">
+                                <div class="tool-card-icon" style="color: #f43f5e; background: rgba(244, 63, 94, 0.12);">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" />
+                                        <path d="M22 21H7" />
+                                        <path d="m5 11 9 9" />
+                                    </svg>
+                                </div>
+                                <div class="tool-card-info">
+                                    <div class="tool-card-name-row">
+                                        <span class="tool-card-name">ยางลบ (Universal Eraser)</span>
+                                        <span class="tool-card-hotkey" style="color: #f43f5e; border-color: rgba(244, 63, 94, 0.3);">Alt+E</span>
+                                    </div>
+                                    <div class="tool-card-desc">แตะหรือลากผ่านเพื่อลบเส้นวาด, ปากกา หรือโซนทันที</div>
                                 </div>
                             </button>
                         </div>
@@ -777,6 +832,73 @@
         </div>
 
         <div class="topbar-right">
+            <!-- Compact Market Source Info Chip & Direct Full Analysis Entry -->
+            <div class="custom-intel-container" id="custom-intel-container">
+                <button type="button" class="tb-btn tb-btn-market-intel" id="btn-market-intel"
+                    onclick="window.app.openFullAnalysisView()"
+                    title="คลิกเพื่อเข้าสู่หน้าจอการวิเคราะห์ & วางแผนเทรด SMC/ICT แบบเต็มจอ">
+                    <span class="intel-status-dot pulse-gold" id="tb-intel-dot"></span>
+                    <span id="tb-intel-label">Gap +0.00$</span>
+                    <span class="tb-intel-badge" id="tb-intel-badge">PAXG 24/7</span>
+                    <span class="tb-intel-info-icon">ℹ️</span>
+                </button>
+
+                <!-- Floating Glassmorphic Source Info Popover / Tooltip -->
+                <div class="custom-intel-popover" id="custom-intel-popover">
+                    <div class="intel-popover-header">
+                        <div class="intel-popover-title">
+                            <span class="intel-popover-dot" id="popover-status-dot"></span>
+                            <span id="popover-status-title">สถานะตลาดทองคำ (XAUUSD)</span>
+                        </div>
+                        <span class="intel-popover-mode-tag" id="popover-mode-tag">Weekend Mode</span>
+                    </div>
+
+                    <div class="intel-popover-body">
+                        <!-- Current Signal Source -->
+                        <div class="intel-popover-row">
+                            <div class="intel-popover-label">📡 สัญญาณที่กำลังใช้งาน:</div>
+                            <div class="intel-popover-val highlight" id="popover-active-source">Binance PAXG/USDT (24/7 Proxy)</div>
+                        </div>
+
+                        <!-- Fallback / Multi-Source List -->
+                        <div class="intel-popover-sources-list" id="popover-sources-list">
+                            <div class="source-item">
+                                <span class="source-item-dot green"></span>
+                                <span class="source-item-name">IC Markets (TradingView WS)</span>
+                                <span class="source-item-status" id="popover-tv-status">จันทร์-ศุกร์ (Real-time)</span>
+                            </div>
+                            <div class="source-item">
+                                <span class="source-item-dot green"></span>
+                                <span class="source-item-name">Binance PAXG 24/7 Token</span>
+                                <span class="source-item-status" id="popover-binance-status">ทำงานตลอดเสาร์-อาทิตย์</span>
+                            </div>
+                            <div class="source-item">
+                                <span class="source-item-dot green"></span>
+                                <span class="source-item-name">Local History Cache</span>
+                                <span class="source-item-status">120k+ M1 แท่งเทียน (Zero-MT5)</span>
+                            </div>
+                        </div>
+
+                        <!-- Gap summary & Real-time Weekend Stats -->
+                        <div class="intel-popover-gap-card" id="popover-gap-card">
+                            <div class="gap-card-row">
+                                <span><span id="popover-label-fri">ราคาปิดวันศุกร์:</span> <b id="popover-fri-close">$--.--</b></span>
+                                <span><span id="popover-label-curr">PAXG ปัจจุบัน:</span> <b id="popover-paxg-price">$--.--</b></span>
+                            </div>
+                            <div class="gap-card-bias" id="popover-gap-bias">
+                                <span id="popover-label-gap">คาดการณ์ Gap:</span> <span id="popover-gap-text">-- pips</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="intel-popover-footer">
+                        <button type="button" class="btn-popover-open-full" id="btn-popover-open-full" onclick="window.app.openFullAnalysisView(); window.app.closeMarketIntelPopover();">
+                            📊 ดูการวิเคราะห์เต็ม & วางแผนเทรด SMC/ICT →
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Auto-Scroll / Lock Latest Bar Trigger -->
             <button class="tb-btn tb-btn-autoscroll active" id="btn-toggle-autoscroll"
                 onclick="window.app.toggleAutoScroll()"
@@ -864,8 +986,320 @@
 
     <!-- 2. MAIN WORKSPACE -->
     <main class="workspace">
+        <!-- Dedicated Full-Screen Analysis & Trading Plan Workstation (Replaces Charts) -->
+        <section class="analysis-view-section" id="view-full-analysis" style="display: none;">
+            <div class="analysis-page-container">
+                <!-- Page Top Navigation / Control Bar -->
+                <div class="analysis-page-topbar">
+                    <div class="analysis-topbar-left">
+                        <button type="button" class="tb-btn tb-btn-back-chart" onclick="window.app.closeFullAnalysisView()" title="กลับไปยังหน้าจอดูกราฟ">
+                            <span style="font-size: 14px;">⬅️</span>
+                            <span>กลับสู่หน้าจอกราฟ</span>
+                        </button>
+                        <div class="analysis-title-group">
+                            <span class="analysis-title-icon">🎯</span>
+                            <span class="analysis-page-title">SMC & ICT แดชบอร์ดการวิเคราะห์และวางแผนเทรด</span>
+                        </div>
+                    </div>
+                    <div class="analysis-topbar-right">
+                        <button type="button" class="analysis-btn-refresh" onclick="window.app.refreshTradingPlan()" title="วิเคราะห์ใหม่ Real-time">
+                            <span>🔄</span>
+                            <span>วิเคราะห์สด</span>
+                        </button>
+                        <div class="analysis-live-status-card">
+                            <span class="analysis-dot" id="analysis-status-dot"></span>
+                            <span id="analysis-active-price">$2,630.50</span>
+                            <span class="analysis-badge" id="analysis-market-tag">Weekend Mode</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sleek Asset Selector Bar (No Horizontal Scrollbar, Beautifully Grouped) -->
+                <div class="analysis-assets-navbar" id="analysis-symbol-chips">
+                    <div class="asset-category-pill">
+                        <span class="category-icon">🥇</span>
+                        <span class="category-name">Commodities:</span>
+                        <button type="button" class="analysis-chip active" data-sym="XAUUSD" onclick="window.app.switchAnalysisSymbol('XAUUSD')">XAUUSD</button>
+                        <button type="button" class="analysis-chip" data-sym="XAGUSD" onclick="window.app.switchAnalysisSymbol('XAGUSD')">XAGUSD</button>
+                    </div>
+                    <div class="asset-divider-v"></div>
+                    <div class="asset-category-pill">
+                        <span class="category-icon">₿</span>
+                        <span class="category-name">Crypto 24/7:</span>
+                        <button type="button" class="analysis-chip" data-sym="BTCUSD" onclick="window.app.switchAnalysisSymbol('BTCUSD')">BTCUSD</button>
+                        <button type="button" class="analysis-chip" data-sym="ETHUSD" onclick="window.app.switchAnalysisSymbol('ETHUSD')">ETHUSD</button>
+                        <button type="button" class="analysis-chip" data-sym="SOLUSD" onclick="window.app.switchAnalysisSymbol('SOLUSD')">SOLUSD</button>
+                    </div>
+                    <div class="asset-divider-v"></div>
+                    <div class="asset-category-pill">
+                        <span class="category-icon">💱</span>
+                        <span class="category-name">Forex:</span>
+                        <button type="button" class="analysis-chip" data-sym="EURUSD" onclick="window.app.switchAnalysisSymbol('EURUSD')">EURUSD</button>
+                        <button type="button" class="analysis-chip" data-sym="GBPUSD" onclick="window.app.switchAnalysisSymbol('GBPUSD')">GBPUSD</button>
+                        <button type="button" class="analysis-chip" data-sym="USDJPY" onclick="window.app.switchAnalysisSymbol('USDJPY')">USDJPY</button>
+                        <button type="button" class="analysis-chip" data-sym="GBPJPY" onclick="window.app.switchAnalysisSymbol('GBPJPY')">GBPJPY</button>
+                        <button type="button" class="analysis-chip" data-sym="AUDUSD" onclick="window.app.switchAnalysisSymbol('AUDUSD')">AUDUSD</button>
+                    </div>
+                </div>
+
+                <!-- Style Selector Tabs (Scalping, Daytrade, Swing) -->
+                <div class="plan-style-tabs analysis-style-tabs">
+                    <button type="button" class="plan-tab-btn" id="full-tab-scalping" onclick="window.app.switchTradingPlanTab('scalping')">
+                        <span class="tab-icon">⚡</span>
+                        <div class="tab-label-group">
+                            <span class="tab-title">Scalping</span>
+                            <span class="tab-sub">M1 - M5 (ฉับไว ทะลุเข้าเป้า)</span>
+                        </div>
+                    </button>
+                    <button type="button" class="plan-tab-btn active" id="full-tab-daytrade" onclick="window.app.switchTradingPlanTab('daytrade')">
+                        <span class="tab-icon">🎯</span>
+                        <div class="tab-label-group">
+                            <span class="tab-title">Daytrade</span>
+                            <span class="tab-sub">M15 - H1 (Session & Killzone)</span>
+                        </div>
+                    </button>
+                    <button type="button" class="plan-tab-btn" id="full-tab-swing" onclick="window.app.switchTradingPlanTab('swing')">
+                        <span class="tab-icon">🌊</span>
+                        <div class="tab-label-group">
+                            <span class="tab-title">Swing Trade</span>
+                            <span class="tab-sub">H4 - D1 (Macro R:R สูง)</span>
+                        </div>
+                    </button>
+                </div>
+
+                <!-- Page Main Scrollable Content -->
+                <div class="analysis-page-body" id="analysis-page-body">
+                    <!-- Dynamic Preloading / Calculating Indicator Banner -->
+                    <div class="analysis-loading-banner" id="analysis-loading-banner">
+                        <span class="loading-spin-icon" style="display:inline-block; animation: spin-pulse 0.8s infinite linear;">🔄</span>
+                        <span id="analysis-loading-text">กำลังวิเคราะห์โครงสร้างตลาด SMC & ICT สำหรับ XAUUSD...</span>
+                    </div>
+
+                    <!-- Top Verdict Banner (ฟันธงทิศทาง) -->
+                    <div class="plan-verdict-banner" id="full-verdict-banner">
+                        <div class="verdict-primary-col">
+                            <div class="verdict-action-pill verdict-buy" id="full-verdict-action-pill">
+                                <span class="action-arrow" id="full-verdict-arrow">▲</span>
+                                <span id="full-verdict-action-text">STRONG BUY</span>
+                            </div>
+                            <div class="verdict-details">
+                                <div class="verdict-headline" id="full-verdict-headline">พิจารณาเปิดสถานะ BUY เมื่อราคาย่อตัวทดสอบโซน Demand OB</div>
+                                <div class="verdict-subtext" id="full-verdict-subtext">โครงสร้างตลาด Bullish พร้อมการเบรก CHoCH ยืนยันแรงส่ง</div>
+                            </div>
+                        </div>
+                        <div class="verdict-gauge-col">
+                            <div class="gauge-label-row">
+                                <span>ระดับความมั่นใจ (Confidence)</span>
+                                <b id="full-verdict-confidence-val">85%</b>
+                            </div>
+                            <div class="gauge-bar-bg">
+                                <div class="gauge-bar-fill" id="full-verdict-confidence-bar" style="width: 85%;"></div>
+                            </div>
+                            <div class="verdict-quality" id="full-verdict-quality">⭐ A+ High Probability Setup</div>
+                        </div>
+                    </div>
+
+                    <!-- 3-Card Grid for Execution Matrix, Confluences, and Market Intel -->
+                    <div class="analysis-tri-grid">
+                        <!-- Card 1: Execution Matrix -->
+                        <div class="plan-matrix-card">
+                            <div class="card-header-title">
+                                <span>📋 ตารางแผนการเทรด (Execution Matrix)</span>
+                                <span class="matrix-badge-rr" id="full-matrix-rr-badge">R:R -</span>
+                            </div>
+
+                            <div class="matrix-levels-list">
+                                <div class="matrix-level-row row-entry">
+                                    <div class="level-label">
+                                        <span class="level-dot dot-blue"></span>
+                                        <span>โซนเข้าออเดอร์ (Entry Zone)</span>
+                                    </div>
+                                    <div class="level-value" id="full-matrix-entry-val">กำลังคำนวณ...</div>
+                                </div>
+                                <div class="matrix-level-row row-ote">
+                                    <div class="level-label">
+                                        <span class="level-dot dot-purple"></span>
+                                        <span>จุดเข้าทองคำ OTE (Fib 62-79%)</span>
+                                    </div>
+                                    <div class="level-value" id="full-matrix-ote-val">-</div>
+                                </div>
+                                <div class="matrix-level-row row-sl">
+                                    <div class="level-label">
+                                        <span class="level-dot dot-red"></span>
+                                        <span>จุดตัดขาดทุน (Stop Loss / SL)</span>
+                                    </div>
+                                    <div class="level-value highlight-sl" id="full-matrix-sl-val">-</div>
+                                </div>
+                                <div class="matrix-level-row row-tp1">
+                                    <div class="level-label">
+                                        <span class="level-dot dot-green"></span>
+                                        <span>เป้าหมาย 1 (TP1 - Internal High)</span>
+                                    </div>
+                                    <div class="level-value highlight-tp" id="full-matrix-tp1-val">-</div>
+                                </div>
+                                <div class="matrix-level-row row-tp2">
+                                    <div class="level-label">
+                                        <span class="level-dot dot-green"></span>
+                                        <span>เป้าหมาย 2 (TP2 - Liquidity Pool)</span>
+                                    </div>
+                                    <div class="level-value highlight-tp" id="full-matrix-tp2-val">-</div>
+                                </div>
+                            </div>
+
+                            <div class="plan-risk-guideline">
+                                <span>💡 <b>คำแนะนำการบริหารเงิน:</b> เสี่ยงไม่เกิน 1-2% ของพอร์ต | แบ่งปิด TP1 50% แล้วย้าย SL กันหน้าทุน (BE)</span>
+                            </div>
+                        </div>
+
+                        <!-- Card 2: SMC & ICT Confluences -->
+                        <div class="plan-confluence-card">
+                            <div class="card-header-title">
+                                <span>🔍 สัญญาณยืนยัน SMC & ICT (Confluences)</span>
+                                <span class="confluence-score" id="full-confluence-score">-</span>
+                            </div>
+
+                            <div class="confluence-items-list">
+                                <div class="confluence-item" id="full-conf-item-structure">
+                                    <div class="conf-icon" id="full-conf-icon-structure">⏳</div>
+                                    <div class="conf-info">
+                                        <div class="conf-title">Market Structure Shift (BOS / CHoCH)</div>
+                                        <div class="conf-desc" id="full-conf-desc-structure">กำลังประเมินโครงสร้างราคา...</div>
+                                    </div>
+                                </div>
+                                <div class="confluence-item" id="full-conf-item-ob">
+                                    <div class="conf-icon" id="full-conf-icon-ob">⏳</div>
+                                    <div class="conf-info">
+                                        <div class="conf-title">Refined Order Block (OB Zone)</div>
+                                        <div class="conf-desc" id="full-conf-desc-ob">กำลังค้นหาโซน Order Block...</div>
+                                    </div>
+                                </div>
+                                <div class="confluence-item" id="full-conf-item-fvg">
+                                    <div class="conf-icon" id="full-conf-icon-fvg">⏳</div>
+                                    <div class="conf-info">
+                                        <div class="conf-title">Fair Value Gap (FVG / Imbalance)</div>
+                                        <div class="conf-desc" id="full-conf-desc-fvg">กำลังคำนวณ Fair Value Gap...</div>
+                                    </div>
+                                </div>
+                                <div class="confluence-item" id="full-conf-item-liq">
+                                    <div class="conf-icon" id="full-conf-icon-liq">⏳</div>
+                                    <div class="conf-info">
+                                        <div class="conf-title">Liquidity Pool Swept (BSL / SSL)</div>
+                                        <div class="conf-desc" id="full-conf-desc-liq">กำลังตรวจจับ Liquidity...</div>
+                                    </div>
+                                </div>
+                                <div class="confluence-item" id="full-conf-item-discount">
+                                    <div class="conf-icon" id="full-conf-icon-discount">⏳</div>
+                                    <div class="conf-info">
+                                        <div class="conf-title">Discount vs Premium Equilibrium</div>
+                                        <div class="conf-desc" id="full-conf-desc-discount">กำลังประเมินอัตราส่วน Fib...</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card 3: Market Intelligence & Weekend Gap -->
+                        <div class="plan-intel-card">
+                            <div class="card-header-title">
+                                <span>🌐 ข้อมูลตลาด & ส่วนต่าง Gap (Market Intel)</span>
+                                <span class="badge-source" id="full-intel-src-badge">Real-time Feed</span>
+                            </div>
+
+                            <div class="intel-metrics-grid">
+                                <div class="intel-metric-box">
+                                    <div class="metric-label" id="full-fri-label">ราคาปิดสัปดาห์</div>
+                                    <div class="metric-val" id="full-fri-val">-</div>
+                                </div>
+                                <div class="intel-metric-box">
+                                    <div class="metric-label" id="full-curr-label">ราคาปัจจุบัน (Live)</div>
+                                    <div class="metric-val" id="full-curr-val">-</div>
+                                </div>
+                                <div class="intel-metric-box full-span">
+                                    <div class="metric-label" id="full-gap-label">คาดการณ์ Gap เช้าวันจันทร์</div>
+                                    <div class="metric-val highlight-gap" id="full-gap-val">-</div>
+                                    <div class="metric-sub" id="full-gap-sub">กำลังวิเคราะห์ความต่างของราคา...</div>
+                                </div>
+                            </div>
+
+                            <div class="intel-sentiment-box" id="full-sentiment-box">
+                                <span class="sentiment-icon" id="full-sentiment-icon">📊</span>
+                                <span class="sentiment-text" id="full-sentiment-text">ประเมินราคาพร้อมวางแผนเทรด</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bottom Section: Weekly Key Levels & Pivots Table -->
+                    <div class="analysis-pivots-section">
+                        <div class="pivots-header">
+                            <div class="pivots-title">🎯 ระดับราคาสำคัญประจำสัปดาห์ (Weekly Key Levels & Pivots)</div>
+                            <button type="button" class="tb-btn tb-btn-plot-pivots" onclick="window.app.plotWeeklyPivotsOnChart()" title="วาดระดับ Pivot ลงชาร์ต">
+                                🪄 วาดระดับลงบนกราฟ
+                            </button>
+                        </div>
+                        <div class="intel-pivots-table-container">
+                            <table class="intel-pivots-table">
+                                <thead>
+                                    <tr>
+                                        <th>ประเภท Pivot</th>
+                                        <th>S3 (รับ 3)</th>
+                                        <th>S1 (รับ 1)</th>
+                                        <th>P (Pivot)</th>
+                                        <th>R1 (ต้าน 1)</th>
+                                        <th>R3 (ต้าน 3)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td class="pivot-type-cell">Standard (ดั้งเดิม)</td>
+                                        <td class="val-sup" id="full-piv-std-s3">-</td>
+                                        <td class="val-sup" id="full-piv-std-s1">-</td>
+                                        <td class="val-pivot" id="full-piv-std-p">-</td>
+                                        <td class="val-res" id="full-piv-std-r1">-</td>
+                                        <td class="val-res" id="full-piv-std-r3">-</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="pivot-type-cell">Fibonacci (ฟีโบนัชชี)</td>
+                                        <td class="val-sup" id="full-piv-fib-s3">-</td>
+                                        <td class="val-sup" id="full-piv-fib-s1">-</td>
+                                        <td class="val-pivot" id="full-piv-fib-p">-</td>
+                                        <td class="val-res" id="full-piv-fib-r1">-</td>
+                                        <td class="val-res" id="full-piv-fib-r3">-</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="pivot-type-cell">Camarilla (คามาริลลา)</td>
+                                        <td class="val-sup" id="full-piv-cam-s3">-</td>
+                                        <td class="val-sup" id="full-piv-cam-s1">-</td>
+                                        <td class="val-pivot" id="full-piv-cam-p">-</td>
+                                        <td class="val-res" id="full-piv-cam-r1">-</td>
+                                        <td class="val-res" id="full-piv-cam-r3">-</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Page Footer Action Bar -->
+                <div class="analysis-page-footer">
+                    <div class="plan-footer-left">
+                        <span class="plan-vault-badge">📦 คลังข้อมูลแท่งเทียนแท้ MT5 Exness (100,000+ แท่ง) • เวลาไทย UTC+7</span>
+                    </div>
+                    <div class="plan-footer-actions">
+                        <button type="button" class="tb-btn tb-btn-plot-smc" onclick="window.app.plotSMCPlanAndReturnToChart()" title="วาดกรอบ Demand/Supply OB, FVG, เส้น Entry, SL, TP ลงบนชาร์ตแล้วกลับสู่หน้าจอกราฟ">
+                            🪄 วาดโซน SMC & แผนเทรดลงชาร์ต (Plot & Return)
+                        </button>
+                        <button type="button" class="tb-btn tb-btn-refresh-plan" onclick="window.app.refreshTradingPlan()" title="ประมวลผลข้อมูลใหม่จากแท่งเทียนล่าสุด">
+                            🔄 รีเฟรชวิเคราะห์
+                        </button>
+                        <button type="button" class="tb-btn tb-btn-secondary" onclick="window.app.closeFullAnalysisView()">
+                            ⬅️ กลับสู่หน้าจอกราฟ
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- Chart Grid Area (1, 2, 4, 8, 16 Charts) -->
-        <section class="chart-area">
+        <section class="chart-area" id="chart-area-section">
             <div id="chart-grid-container" class="chart-grid layout-2x2">
                 <!-- Chart Cells rendered dynamically by ChartEngine -->
             </div>
@@ -1019,6 +1453,27 @@
                                 <path d="M18 20V10M12 20V4M6 20v-6" />
                             </svg>
                         </button>
+                    </div>
+                </div>
+
+                <!-- Active Target Asset & Live Price Card -->
+                <div class="pad-active-symbol-bar" id="pad-active-symbol-bar" onclick="window.app.focusActiveChart()" title="สินทรัพย์และราคาเรียลไทม์ของชาร์ตที่กำลังเลือก (Active Chart) - คลิกเพื่อไฮไลท์ชาร์ต">
+                    <div class="pad-sym-left">
+                        <span class="pad-sym-dot" title="Active Chart"></span>
+                        <div class="pad-sym-meta">
+                            <div class="pad-sym-row1">
+                                <span class="pad-sym-name" id="pad-active-sym-name">XAUUSD</span>
+                                <span class="pad-sym-chart-tag" id="pad-active-chart-tag">CH 1</span>
+                            </div>
+                            <span class="pad-sym-tf" id="pad-active-sym-tf">1H</span>
+                        </div>
+                    </div>
+                    <div class="pad-sym-right">
+                        <div class="pad-sym-price-row">
+                            <span class="pad-sym-arrow up" id="pad-active-sym-arrow">▲</span>
+                            <span class="pad-sym-price up" id="pad-active-sym-price">4,307.50</span>
+                        </div>
+                        <span class="pad-sym-chg pos" id="pad-active-sym-chg">+0.00%</span>
                     </div>
                 </div>
 
@@ -2289,6 +2744,348 @@
             </div>
         </div>
 
+        <!-- Modal: Market Intelligence & Weekend Analysis (Zero MT5 Needed) -->
+        <div class="modal-overlay custom-modal-overlay" id="modal-market-intel" style="z-index: 100006;">
+            <div class="custom-modal-box market-intel-modal-box" style="max-width: 680px; border-radius: 16px;">
+                <div class="modal-header intel-modal-header">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span class="intel-header-icon" style="font-size: 20px;">🧭</span>
+                        <div>
+                            <span class="modal-title" style="font-size: 15px; font-weight: 700;">Market Intelligence & Weekend Plan</span>
+                            <div class="intel-header-sub" id="intel-modal-sub" style="font-size: 11px; opacity: 0.75; font-weight: normal; margin-top: 2px;">ระบบติดตามตลาดอัจฉริยะ & คาดการณ์ Gap ล่วงหน้า 24/7 (ไม่ต้องเปิด MT5)</div>
+                        </div>
+                    </div>
+                    <button type="button" class="modal-close-btn" onclick="window.app.closeMarketIntelModal()">✕</button>
+                </div>
+
+                <div class="modal-body intel-modal-body" style="padding: 16px 18px; max-height: 75vh; overflow-y: auto;">
+                    <!-- Market Status & Gap Hero Card -->
+                    <div class="intel-hero-card" id="intel-hero-card">
+                        <div class="intel-hero-top">
+                            <div class="intel-market-status-badge" id="intel-market-status-badge">
+                                <span class="intel-badge-dot"></span>
+                                <span id="intel-status-text">โหมดวันหยุด (Weekend Mode)</span>
+                            </div>
+                            <div class="intel-time-tag" id="intel-time-tag">เชื่อมโยงสด 24/7</div>
+                        </div>
+
+                        <div class="intel-gap-grid">
+                            <div class="intel-stat-box">
+                                <div class="intel-stat-label" id="intel-modal-fri-label">ราคาปิดวันศุกร์</div>
+                                <div class="intel-stat-val" id="intel-friday-close">$--.--</div>
+                                <div class="intel-stat-sub" id="intel-modal-fri-sub">ตลาด Spot Forex ล่าสุด</div>
+                            </div>
+                            <div class="intel-stat-box highlight-proxy">
+                                <div class="intel-stat-label" id="intel-modal-paxg-label">ราคาปัจจุบัน (24/7)</div>
+                                <div class="intel-stat-val" id="intel-paxg-price">$--.--</div>
+                                <div class="intel-stat-sub" id="intel-modal-paxg-sub">สภาพคล่องจริง Real-time</div>
+                            </div>
+                            <div class="intel-stat-box highlight-gap">
+                                <div class="intel-stat-label" id="intel-modal-gap-label">คาดการณ์ Gap / ส่วนต่าง</div>
+                                <div class="intel-stat-val" id="intel-gap-val">-- pips</div>
+                                <div class="intel-stat-sub" id="intel-gap-sub">ประเมินทิศทางเปิดตลาด</div>
+                            </div>
+                        </div>
+
+                        <div class="intel-sentiment-banner" id="intel-sentiment-banner">
+                            <span class="sentiment-icon" id="intel-sentiment-icon">🔍</span>
+                            <span id="intel-sentiment-msg">กำลังประมวลผลข้อมูลตลาดอัจฉริยะ...</span>
+                        </div>
+                    </div>
+
+                    <!-- Source Health Matrix (100% Free of MT5) -->
+                    <div class="intel-section-title" style="margin-top: 14px; font-size: 12px; font-weight: 700; color: var(--text-secondary);">⚡ สถานะระบบเชื่อมต่อข้อมูล (Multi-Source Health)</div>
+                    <div class="intel-sources-grid">
+                        <div class="intel-source-card">
+                            <div class="source-card-head">
+                                <span class="source-dot green"></span>
+                                <span class="source-name">TradingView WS Live</span>
+                            </div>
+                            <div class="source-desc">IC Markets / OANDA Feed สดสำหรับวันธรรมดา</div>
+                        </div>
+                        <div class="intel-source-card">
+                            <div class="source-card-head">
+                                <span class="source-dot green"></span>
+                                <span class="source-name">Binance Spot 24/7</span>
+                            </div>
+                            <div class="source-desc">PAXG & Crypto ทำงานตลอดเสาร์-อาทิตย์</div>
+                        </div>
+                        <div class="intel-source-card">
+                            <div class="source-card-head">
+                                <span class="source-dot green"></span>
+                                <span class="source-name">120k+ Local Bar Cache</span>
+                            </div>
+                            <div class="source-desc">จำลองกราฟและแท่งเทียนย้อนหลังได้ตลอดเวลา</div>
+                        </div>
+                    </div>
+
+                    <!-- Auto Weekly Key Levels & Pivots -->
+                    <div class="intel-section-title" style="margin-top: 16px; font-size: 12px; font-weight: 700; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center;">
+                        <span>🎯 ระดับราคาสำคัญประจำสัปดาห์ (Weekly Key Levels)</span>
+                        <button type="button" class="tb-btn tb-btn-plot-pivots" onclick="window.app.plotWeeklyPivotsOnChart()" title="วาดเส้นระดับ Pivot & แนวรับแนวต้านลงบนชาร์ตปัจจุบันอัตโนมัติ" style="font-size: 11px; padding: 4px 10px; background: rgba(56,189,248,0.15); border-color: rgba(56,189,248,0.4); color: #38bdf8;">
+                            🪄 วาดระดับลงบนกราฟ
+                        </button>
+                    </div>
+
+                    <div class="intel-pivots-table-container" style="margin-top: 8px; overflow-x: auto;">
+                        <table class="intel-pivots-table" id="intel-pivots-table">
+                            <thead>
+                                <tr>
+                                    <th>ประเภท Pivot</th>
+                                    <th>S3 (รับ 3)</th>
+                                    <th>S1 (รับ 1)</th>
+                                    <th>P (Pivot)</th>
+                                    <th>R1 (ต้าน 1)</th>
+                                    <th>R3 (ต้าน 3)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr id="row-pivot-standard">
+                                    <td class="pivot-type-cell">Standard (ดั้งเดิม)</td>
+                                    <td class="val-sup" id="piv-std-s3">-</td>
+                                    <td class="val-sup" id="piv-std-s1">-</td>
+                                    <td class="val-pivot" id="piv-std-p">-</td>
+                                    <td class="val-res" id="piv-std-r1">-</td>
+                                    <td class="val-res" id="piv-std-r3">-</td>
+                                </tr>
+                                <tr id="row-pivot-fib">
+                                    <td class="pivot-type-cell">Fibonacci (ฟีโบนัชชี)</td>
+                                    <td class="val-sup" id="piv-fib-s3">-</td>
+                                    <td class="val-sup" id="piv-fib-s1">-</td>
+                                    <td class="val-pivot" id="piv-fib-p">-</td>
+                                    <td class="val-res" id="piv-fib-r1">-</td>
+                                    <td class="val-res" id="piv-fib-r3">-</td>
+                                </tr>
+                                <tr id="row-pivot-cam">
+                                    <td class="pivot-type-cell">Camarilla (คามาริลลา)</td>
+                                    <td class="val-sup" id="piv-cam-s3">-</td>
+                                    <td class="val-sup" id="piv-cam-s1">-</td>
+                                    <td class="val-pivot" id="piv-cam-p">-</td>
+                                    <td class="val-res" id="piv-cam-r1">-</td>
+                                    <td class="val-res" id="piv-cam-r3">-</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="modal-footer" style="padding: 12px 18px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.08);">
+                    <div style="font-size: 11px; color: var(--text-secondary);">💡 ระบบจะสลับแหล่งข้อมูลให้อัตโนมัติเมื่อตลาดเปิด/ปิด</div>
+                    <button type="button" class="tb-btn tb-btn-primary" onclick="window.app.closeMarketIntelModal()">ปิดหน้าต่าง</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- SMC & ICT Trading Plan & Analysis Modal    -->
+        <!-- ========================================== -->
+        <div class="modal-backdrop modal-trading-plan-backdrop" id="modal-trading-plan" style="display: none;">
+            <div class="trading-plan-modal-box">
+                <!-- Modal Header -->
+                <div class="plan-modal-header">
+                    <div class="plan-header-left">
+                        <div class="plan-header-title-row">
+                            <span class="plan-header-icon">🎯</span>
+                            <span class="plan-modal-title">SMC & ICT แดชบอร์ดการวิเคราะห์และแผนการเทรด</span>
+                        </div>
+                        <div class="plan-header-badges">
+                            <span class="plan-badge-symbol" id="plan-badge-symbol">XAUUSD</span>
+                            <span class="plan-badge-price" id="plan-badge-price">$2,630.50</span>
+                            <span class="plan-badge-trend trend-bullish" id="plan-badge-trend">BULLISH</span>
+                            <span class="plan-badge-tf" id="plan-badge-tf">TF: M15 (Daytrade)</span>
+                        </div>
+                    </div>
+                    <div class="plan-header-right">
+                        <button type="button" class="plan-modal-close-btn" onclick="window.app.closeTradingPlanModal()" title="ปิด (Esc)">✕</button>
+                    </div>
+                </div>
+
+                <!-- Style Selector Tabs (Scalping, Daytrade, Swing) -->
+                <div class="plan-style-tabs">
+                    <button type="button" class="plan-tab-btn" id="plan-tab-scalping" onclick="window.app.switchTradingPlanTab('scalping')">
+                        <span class="tab-icon">⚡</span>
+                        <div class="tab-label-group">
+                            <span class="tab-title">Scalping</span>
+                            <span class="tab-sub">M1 - M5 (ฉับไว ทะลุเข้าเป้า)</span>
+                        </div>
+                    </button>
+                    <button type="button" class="plan-tab-btn active" id="plan-tab-daytrade" onclick="window.app.switchTradingPlanTab('daytrade')">
+                        <span class="tab-icon">🎯</span>
+                        <div class="tab-label-group">
+                            <span class="tab-title">Daytrade</span>
+                            <span class="tab-sub">M15 - H1 (Session & Killzone)</span>
+                        </div>
+                    </button>
+                    <button type="button" class="plan-tab-btn" id="plan-tab-swing" onclick="window.app.switchTradingPlanTab('swing')">
+                        <span class="tab-icon">🌊</span>
+                        <div class="tab-label-group">
+                            <span class="tab-title">Swing Trade</span>
+                            <span class="tab-sub">H4 - D1 (Macro R:R สูง)</span>
+                        </div>
+                    </button>
+                </div>
+
+                <!-- Modal Body with Verdict & Details -->
+                <div class="plan-modal-body" id="plan-modal-body">
+                    <!-- Top Verdict Banner (ฟันธงทิศทาง) -->
+                    <div class="plan-verdict-banner" id="plan-verdict-banner">
+                        <div class="verdict-primary-col">
+                            <div class="verdict-action-pill verdict-buy" id="verdict-action-pill">
+                                <span class="action-arrow" id="verdict-arrow">▲</span>
+                                <span id="verdict-action-text">STRONG BUY</span>
+                            </div>
+                            <div class="verdict-details">
+                                <div class="verdict-headline" id="verdict-headline">พิจารณาเปิดสถานะ BUY เมื่อราคาย่อตัวทดสอบโซน Demand OB</div>
+                                <div class="verdict-subtext" id="verdict-subtext">โครงสร้างตลาด Bullish พร้อมการเบรก CHoCH ยืนยันแรงส่ง</div>
+                            </div>
+                        </div>
+                        <div class="verdict-gauge-col">
+                            <div class="gauge-label-row">
+                                <span>ระดับความมั่นใจ (Confidence)</span>
+                                <b id="verdict-confidence-val">85%</b>
+                            </div>
+                            <div class="gauge-bar-bg">
+                                <div class="gauge-bar-fill" id="verdict-confidence-bar" style="width: 85%;"></div>
+                            </div>
+                            <div class="verdict-quality" id="verdict-quality">⭐ A+ High Probability Setup</div>
+                        </div>
+                    </div>
+
+                    <!-- 2-Column Analysis & Matrix Grid -->
+                    <div class="plan-grid-container">
+                        <!-- Left Card: Trade Execution Matrix (ระดับราคาเข้า/คัท/เป้า) -->
+                        <div class="plan-matrix-card">
+                            <div class="card-header-title">
+                                <span>📋 ตารางแผนการเทรด (Execution Matrix)</span>
+                                <span class="matrix-badge-rr" id="matrix-rr-badge">R:R 1:3.2</span>
+                            </div>
+
+                            <div class="matrix-levels-list">
+                                <!-- Entry Zone -->
+                                <div class="matrix-level-row row-entry">
+                                    <div class="level-label">
+                                        <span class="level-dot dot-blue"></span>
+                                        <span>โซนเข้าออเดอร์ (Entry Zone)</span>
+                                    </div>
+                                    <div class="level-value" id="matrix-entry-val">$2,624.50 - $2,627.00</div>
+                                </div>
+                                <!-- Optimal Trade Entry (OTE) -->
+                                <div class="matrix-level-row row-ote">
+                                    <div class="level-label">
+                                        <span class="level-dot dot-purple"></span>
+                                        <span>จุดเข้าทองคำ OTE (Fib 62-79%)</span>
+                                    </div>
+                                    <div class="level-value" id="matrix-ote-val">$2,625.80</div>
+                                </div>
+                                <!-- Stop Loss -->
+                                <div class="matrix-level-row row-sl">
+                                    <div class="level-label">
+                                        <span class="level-dot dot-red"></span>
+                                        <span>จุดตัดขาดทุน (Stop Loss / SL)</span>
+                                    </div>
+                                    <div class="level-value highlight-sl" id="matrix-sl-val">$2,618.20 <small id="matrix-sl-dist">(630 pts)</small></div>
+                                </div>
+                                <!-- Take Profit 1 -->
+                                <div class="matrix-level-row row-tp1">
+                                    <div class="level-label">
+                                        <span class="level-dot dot-green"></span>
+                                        <span>เป้าหมาย 1 (TP1 - Internal High)</span>
+                                    </div>
+                                    <div class="level-value highlight-tp" id="matrix-tp1-val">$2,638.50 <small id="matrix-tp1-dist">(1,400 pts)</small></div>
+                                </div>
+                                <!-- Take Profit 2 -->
+                                <div class="matrix-level-row row-tp2">
+                                    <div class="level-label">
+                                        <span class="level-dot dot-green"></span>
+                                        <span>เป้าหมาย 2 (TP2 - Liquidity Pool)</span>
+                                    </div>
+                                    <div class="level-value highlight-tp" id="matrix-tp2-val">$2,648.00 <small id="matrix-tp2-dist">(2,350 pts)</small></div>
+                                </div>
+                            </div>
+
+                            <!-- Risk Guideline Box -->
+                            <div class="plan-risk-guideline">
+                                <span>💡 <b>คำแนะนำการบริหารเงิน:</b> เสี่ยงไม่เกิน 1-2% ของพอร์ต | แบ่งปิด TP1 50% แล้วย้าย SL กันหน้าทุน (BE)</span>
+                            </div>
+                        </div>
+
+                        <!-- Right Card: SMC & ICT Confluences Checklist -->
+                        <div class="plan-confluence-card">
+                            <div class="card-header-title">
+                                <span>🔍 สัญญาณยืนยัน SMC & ICT (Confluences)</span>
+                                <span class="confluence-score" id="confluence-score">4/5 เงื่อนไขครบ</span>
+                            </div>
+
+                            <div class="confluence-items-list">
+                                <!-- Structure Shift -->
+                                <div class="confluence-item" id="conf-item-structure">
+                                    <div class="conf-icon" id="conf-icon-structure">✅</div>
+                                    <div class="conf-info">
+                                        <div class="conf-title">Market Structure Shift (BOS / CHoCH)</div>
+                                        <div class="conf-desc" id="conf-desc-structure">เกิด CHoCH ขาขึ้น ชนะ Swing High สำคัญ</div>
+                                    </div>
+                                </div>
+
+                                <!-- Order Block -->
+                                <div class="confluence-item" id="conf-item-ob">
+                                    <div class="conf-icon" id="conf-icon-ob">✅</div>
+                                    <div class="conf-info">
+                                        <div class="conf-title">Refined Order Block (OB Zone)</div>
+                                        <div class="conf-desc" id="conf-desc-ob">พบ Bullish Demand OB ที่ 2624.50 - 2627.00</div>
+                                    </div>
+                                </div>
+
+                                <!-- Fair Value Gap -->
+                                <div class="confluence-item" id="conf-item-fvg">
+                                    <div class="conf-icon" id="conf-icon-fvg">✅</div>
+                                    <div class="conf-info">
+                                        <div class="conf-title">Fair Value Gap (FVG / Imbalance)</div>
+                                        <div class="conf-desc" id="conf-desc-fvg">มีช่องว่างราคา FVG ซ้อนทับโซน OB เพิ่มแรงดูดราคา</div>
+                                    </div>
+                                </div>
+
+                                <!-- Liquidity Sweep -->
+                                <div class="confluence-item" id="conf-item-liq">
+                                    <div class="conf-icon" id="conf-icon-liq">✅</div>
+                                    <div class="conf-info">
+                                        <div class="conf-title">Liquidity Pool Swept (BSL / SSL)</div>
+                                        <div class="conf-desc" id="conf-desc-liq">ราคาเพิ่งกวาด Sell-Side Liquidity (SSL) ใต้ฐานเดิมแล้วดึงกลับทันที</div>
+                                    </div>
+                                </div>
+
+                                <!-- Premium vs Discount -->
+                                <div class="confluence-item" id="conf-item-discount">
+                                    <div class="conf-icon" id="conf-icon-discount">✅</div>
+                                    <div class="conf-info">
+                                        <div class="conf-title">Discount vs Premium Equilibrium</div>
+                                        <div class="conf-desc" id="conf-desc-discount">ราคาอยู่ในโซน Discount (ถูกกว่า 50%) ได้เปรียบสำหรับการซื้อ</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal Footer Toolbar -->
+                <div class="plan-modal-footer">
+                    <div class="plan-footer-left">
+                        <span class="plan-vault-badge">📦 ข้อมูลแท่งเทียนแท้ MT5 Exness (100,000+ แท่ง) • เวลาไทย UTC+7</span>
+                    </div>
+                    <div class="plan-footer-actions">
+                        <button type="button" class="tb-btn tb-btn-plot-smc" onclick="window.app.plotSMCPlanOnChart()" title="วาดกรอบ Demand/Supply OB, FVG, เส้น Entry, SL, TP ลงบนชาร์ตปัจจุบัน">
+                            🪄 วาดโซน SMC & แผนเทรดลงชาร์ต
+                        </button>
+                        <button type="button" class="tb-btn tb-btn-refresh-plan" onclick="window.app.refreshTradingPlan()" title="ประมวลผลข้อมูลใหม่จากแท่งเทียนล่าสุด">
+                            🔄 รีเฟรชวิเคราะห์
+                        </button>
+                        <button type="button" class="tb-btn tb-btn-secondary" onclick="window.app.closeTradingPlanModal()">
+                            ปิด
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Floating Exit Controls for Display Mode -->
         <div class="display-mode-controls" id="display-mode-controls">
             <button type="button" class="btn-exit-display" onclick="window.app.exitDisplayMode()"
@@ -2310,17 +3107,18 @@
             <button type="button" class="pab-dismiss" onclick="window.chartEngine && window.chartEngine.dismissPriceAlertBanner()" title="ปิดการแจ้งเตือน">✕</button>
         </div>
 
-        <!-- Scripts (Cache-Busted v2.6.1) -->
-        <script src="js/resampler.js?v=2.6.1"></script>
-        <script src="js/indicators.js?v=2.6.1"></script>
-        <script src="js/volume-profile.js?v=2.6.1"></script>
-        <script src="js/footprint.js?v=2.6.1"></script>
-        <script src="js/patterns.js?v=2.6.1"></script>
-        <script src="js/watchlist.js?v=2.6.1"></script>
-        <script src="js/journal.js?v=2.6.1"></script>
-        <script src="js/chart-engine.js?v=2.6.1"></script>
-        <script src="js/replay-engine.js?v=2.6.1"></script>
-        <script src="js/app.js?v=2.6.1"></script>
+        <!-- Scripts (Cache-Busted v2.6.9) -->
+        <script src="js/resampler.js?v=2.6.9"></script>
+        <script src="js/indicators.js?v=2.6.9"></script>
+        <script src="js/volume-profile.js?v=2.6.9"></script>
+        <script src="js/footprint.js?v=2.6.9"></script>
+        <script src="js/patterns.js?v=2.6.9"></script>
+        <script src="js/watchlist.js?v=2.6.9"></script>
+        <script src="js/journal.js?v=2.6.9"></script>
+        <script src="js/chart-engine.js?v=2.6.9"></script>
+        <script src="js/smc-ict-engine.js?v=2.6.9"></script>
+        <script src="js/replay-engine.js?v=2.6.9"></script>
+        <script src="js/app.js?v=2.6.9"></script>
 </body>
 
 </html>

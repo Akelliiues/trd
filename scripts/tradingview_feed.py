@@ -40,7 +40,8 @@ class TradingViewWSFeed:
             "FX:USDJPY",
             "BINANCE:BTCUSDT",
             "BINANCE:ETHUSDT",
-            "BINANCE:SOLUSDT"
+            "BINANCE:SOLUSDT",
+            "BINANCE:PAXGUSDT"
         ]
 
         # Rate limiter for SSE tick broadcasts (max 25 updates/sec per symbol)
@@ -254,6 +255,8 @@ class TradingViewWSFeed:
                 targets.extend(["ETHUSDT", "ETHUSD"])
             elif "SOLUSDT" in raw_sym:
                 targets.extend(["SOLUSDT", "SOLUSD"])
+            elif "PAXGUSDT" in raw_sym:
+                targets.extend(["PAXGUSDT", "PAXGUSD", "XAUUSD_WEEKEND"])
             elif "EURUSD" in raw_sym:
                 targets.append("EURUSD")
             elif "GBPUSD" in raw_sym:

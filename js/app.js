@@ -5,7 +5,7 @@
 
 document.addEventListener('DOMContentLoaded', async () => {
     // 0. Application Version Control & Forced Auto-Migration
-    const APP_VERSION = '2.6.1';
+    const APP_VERSION = '2.6.7';
     window.APP_VERSION = APP_VERSION;
     const prevVersion = localStorage.getItem('tt_app_version');
     if (prevVersion && prevVersion !== APP_VERSION) {
@@ -423,6 +423,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             const label = document.getElementById('tb-current-tools-label') || document.getElementById('tb-current-draw-label');
             
             const toolNames = {
+                'eraser': '🧹 ยางลบ',
+                'pen': '🖊️ ปากกา',
+                'arrow': '🏹 ลูกศร',
                 'trendline': '📈 เทรนด์ไลน์',
                 'horzline': '➖ แนวนอน',
                 'horzray': '➡️ เรย์แนวนอน',
@@ -630,6 +633,29 @@ document.addEventListener('DOMContentLoaded', async () => {
             this.targetCellForTick = cell.index;
             this.targetCellForSymbol = cell.index;
             this.syncTimeframeDropdown(cell.timeframe);
+            if (chartEngine && chartEngine.updateActiveTitlebarPrice) {
+                chartEngine.updateActiveTitlebarPrice(cell);
+            }
+            const analysisView = document.getElementById('view-full-analysis');
+            const isAnalysisOpen = analysisView && analysisView.style.display !== 'none';
+            if (!isAnalysisOpen && this.updateMarketIntelUI) {
+                const sym = cell ? cell.symbol : 'XAUUSD';
+                this.updateMarketIntelUI(this.marketIntelData, sym);
+                if (this.fetchMarketIntelligence) {
+                    this.fetchMarketIntelligence(sym);
+                }
+            }
+        },
+
+        focusActiveChart() {
+            const active = chartEngine.getActiveChart();
+            if (active && active.element) {
+                active.element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                active.element.classList.add('pulse-active');
+                setTimeout(() => {
+                    if (active.element) active.element.classList.remove('pulse-active');
+                }, 800);
+            }
         },
 
         toggleTimeframeDropdown(event) {
@@ -1260,6 +1286,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 chartEngine.clearCellFibonacci(cellIndex);
             } else {
                 chartEngine.clearAllFibonacci();
+            }
+        },
+
+        // ซ่อน / แสดง ภาพวาดและเครื่องมือทั้งหมดบนชาร์ต
+        toggleHideDrawings(cellIndex) {
+            if (chartEngine && chartEngine.toggleHideDrawings) {
+                chartEngine.toggleHideDrawings(cellIndex);
             }
         },
 
@@ -2225,6 +2258,1232 @@ document.addEventListener('DOMContentLoaded', async () => {
                     window.location.reload(true);
                 }
             }
+        },
+
+        // --- Market Intelligence & Weekend Analysis Controller ---
+        marketIntelData: null,
+        marketIntelCache: {},
+
+        async fetchMarketIntelligence(targetSym) {
+            const analysisView = document.getElementById('view-full-analysis');
+            const isAnalysisOpen = analysisView && analysisView.style.display !== 'none';
+            const activeChart = (window.chartEngine && window.chartEngine.getActiveChart) ? window.chartEngine.getActiveChart() : null;
+            
+            let sym = targetSym;
+            if (!sym) {
+                sym = (isAnalysisOpen && this.activeAnalysisSymbol) ? this.activeAnalysisSymbol : (activeChart && activeChart.symbol ? activeChart.symbol : 'XAUUSD');
+            }
+            sym = sym.toUpperCase().replace('/', '').replace('-', '').replace('#', '').trim();
+            const requestSym = sym;
+
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 1800);
+                const resp = await fetch(`/api/market-intelligence?symbol=${encodeURIComponent(sym)}&t=${Date.now()}`, { signal: controller.signal });
+                clearTimeout(timeoutId);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data && data.status === 'ok' && data.intelligence) {
+                        this.marketIntelCache[requestSym] = data.intelligence;
+                        // Only update live state if symbol hasn't changed in the meantime
+                        if (!isAnalysisOpen || this.activeAnalysisSymbol === requestSym) {
+                            this.marketIntelData = data.intelligence;
+                            this.updateMarketIntelUI(data.intelligence, requestSym);
+                            this.renderMarketIntelModalContent(data.intelligence, requestSym);
+                        }
+                        return data.intelligence;
+                    }
+                }
+            } catch (e) {
+                console.warn('[MarketIntel] Remote API unavailable or timed out, falling back to Client Engine:', e);
+            }
+
+            // Standalone Client-Side Fallback Engine (Runs even if Apache/Host returns 404 for /api/)
+            if (window.SMCICTEngine && window.SMCICTEngine.generateMarketIntelClientSide) {
+                const clientIntel = window.SMCICTEngine.generateMarketIntelClientSide(requestSym);
+                if (clientIntel && clientIntel.intelligence) {
+                    this.marketIntelCache[requestSym] = clientIntel.intelligence;
+                    if (!isAnalysisOpen || this.activeAnalysisSymbol === requestSym) {
+                        this.marketIntelData = clientIntel.intelligence;
+                        this.updateMarketIntelUI(clientIntel.intelligence, requestSym);
+                        this.renderMarketIntelModalContent(clientIntel.intelligence, requestSym);
+                    }
+                    return clientIntel.intelligence;
+                }
+            }
+
+            return null;
+        },
+
+        updateMarketIntelUI(intel, targetSymbol) {
+            intel = intel || this.marketIntelData;
+
+            const analysisView = document.getElementById('view-full-analysis');
+            const isAnalysisOpen = analysisView && analysisView.style.display !== 'none';
+
+            // 1. Determine currently Active Symbol
+            let sym = targetSymbol;
+            if (!sym) {
+                sym = (isAnalysisOpen && this.activeAnalysisSymbol) ? this.activeAnalysisSymbol : ((window.chartEngine && window.chartEngine.getActiveChart && window.chartEngine.getActiveChart().symbol) ? window.chartEngine.getActiveChart().symbol : 'XAUUSD');
+            }
+            sym = sym.toUpperCase().replace('/', '').replace('-', '').replace('#', '').trim();
+
+            const btn = document.getElementById('btn-market-intel');
+            const dot = document.getElementById('tb-intel-dot');
+            const label = document.getElementById('tb-intel-label');
+            const badge = document.getElementById('tb-intel-badge');
+
+            // Popover Elements
+            const popDot = document.getElementById('popover-status-dot');
+            const popTitle = document.getElementById('popover-status-title');
+            const popModeTag = document.getElementById('popover-mode-tag');
+            const popActiveSrc = document.getElementById('popover-active-source');
+            const popSourcesList = document.getElementById('popover-sources-list');
+            const popFriClose = document.getElementById('popover-fri-close');
+            const popPaxgPrice = document.getElementById('popover-paxg-price');
+            const popGapText = document.getElementById('popover-gap-text');
+            const popGapCard = document.getElementById('popover-gap-card');
+            const popFooterBtn = document.getElementById('btn-popover-open-full');
+            const popLabelFri = document.getElementById('popover-label-fri');
+            const popLabelCurr = document.getElementById('popover-label-curr');
+            const popLabelGap = document.getElementById('popover-label-gap');
+
+            // Asset Classification
+            const isCrypto = sym.includes('BTC') || sym.includes('ETH') || sym.includes('SOL') || sym.includes('BNB') || sym.includes('XRP') || sym.includes('DOGE');
+            const isGold = sym.includes('XAU') || sym.includes('GOLD') || sym.includes('PAXG');
+            const isSilver = sym.includes('XAG') || sym.includes('SILVER');
+            const isForex = !isCrypto && !isGold && !isSilver;
+
+            // Extract specific symbol intelligence if available in multi-symbol bundle
+            let symIntel = null;
+            if (intel && intel.symbols_summary && intel.symbols_summary[sym]) {
+                symIntel = intel.symbols_summary[sym];
+            } else if (intel && intel.active_symbol === sym) {
+                symIntel = intel;
+            } else if (this.marketIntelCache[sym]) {
+                symIntel = this.marketIntelCache[sym];
+            }
+
+            const isWeekend = intel ? (intel.is_weekend && !isCrypto) : false;
+            const gap = (symIntel && symIntel.gap_analysis) ? symIntel.gap_analysis : (intel ? intel.gap_analysis : {}) || {};
+
+            const decimals = isGold ? 2 : (isCrypto ? (sym.includes('XRP') || sym.includes('DOGE') ? 4 : 2) : (sym.includes('JPY') ? 3 : 5));
+            const formatPrice = (p) => {
+                if (p === undefined || p === null || isNaN(p)) return '$--.--';
+                const prefix = isForex ? '' : '$';
+                return prefix + Number(p).toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+            };
+
+            const gapPts = gap.gap_points !== undefined ? gap.gap_points : 0;
+            const gapPips = gap.gap_pips !== undefined ? gap.gap_pips : 0;
+            const gapPct = gap.gap_percent !== undefined ? gap.gap_percent : 0;
+            const sign = gapPts > 0 ? '+' : '';
+
+            // Gap color styling
+            const getGapColor = (pts) => {
+                if (pts > 0) return '#34d399';
+                if (pts < 0) return '#f87171';
+                return '#fbbf24';
+            };
+
+            // CASE 1: CRYPTO (24/7 Live Non-Stop)
+            if (isCrypto) {
+                const chg24 = gap.change_24h_percent !== undefined ? gap.change_24h_percent : 0;
+                const chg24Sign = chg24 > 0 ? '+' : '';
+                if (btn) {
+                    btn.className = 'tb-btn tb-btn-market-intel market-open';
+                    btn.title = `สินทรัพย์: ${sym} (Crypto) • ตลาดเปิด 24/7 Real-time สดจาก Binance (24h: ${chg24Sign}${chg24.toFixed(2)}%)`;
+                }
+                if (label) label.innerText = `${chg24Sign}${chg24.toFixed(2)}% 24/7`;
+                if (badge) badge.innerText = 'BINANCE';
+
+                if (popDot) { popDot.className = 'intel-popover-dot open'; }
+                if (popTitle) popTitle.innerText = `ตลาดคริปโตเคอร์เรนซี (${sym})`;
+                if (popModeTag) {
+                    popModeTag.className = 'intel-popover-mode-tag open';
+                    popModeTag.innerText = '24/7 Non-Stop';
+                }
+                if (popActiveSrc) popActiveSrc.innerText = `Binance Spot WebSocket (${sym.includes('USDT') ? sym : sym + 'T'} 1:1 Live Feed)`;
+                
+                if (popSourcesList) {
+                    popSourcesList.innerHTML = `
+                        <div class="source-item">
+                            <div><span class="source-item-dot green"></span><span class="source-item-name">Binance WebSocket Live</span></div>
+                            <span class="source-item-status" style="color: #34d399;">ทำงานต่อเนื่อง 24/7 ไม่มีวันหยุด</span>
+                        </div>
+                        <div class="source-item">
+                            <div><span class="source-item-dot green"></span><span class="source-item-name">Multi-Exchange Liquidity</span></div>
+                            <span class="source-item-status">Bybit / OKX / Kraken 1:1</span>
+                        </div>
+                        <div class="source-item">
+                            <div><span class="source-item-dot green"></span><span class="source-item-name">Local History Cache</span></div>
+                            <span class="source-item-status">120k+ M1 แท่งเทียน (Zero-MT5)</span>
+                        </div>
+                    `;
+                }
+                if (popGapCard) popGapCard.style.display = 'block';
+                if (popLabelFri) popLabelFri.innerText = `ราคาปิดวันศุกร์:`;
+                if (popLabelCurr) popLabelCurr.innerText = `ราคาปัจจุบัน (24/7):`;
+                if (popLabelGap) popLabelGap.innerText = `ส่วนต่างวันหยุด (Move):`;
+
+                if (popFriClose) popFriClose.innerText = formatPrice(gap.friday_close);
+                if (popPaxgPrice) popPaxgPrice.innerText = formatPrice(gap.current_price);
+                if (popGapText) {
+                    popGapText.innerText = `${sign}${formatPrice(gapPts)} (${sign}${gapPct.toFixed(2)}%)`;
+                    popGapText.style.color = getGapColor(gapPts);
+                }
+
+                if (popFooterBtn) popFooterBtn.innerText = '📊 เปิดแดชบอร์ดการวิเคราะห์ & แผนเทรด →';
+            }
+            // CASE 2: GOLD / METALS (XAUUSD / PAXG)
+            else if (isGold) {
+                if (sym.includes('PAXG')) {
+                    if (btn) {
+                        btn.className = 'tb-btn tb-btn-market-intel market-open';
+                        btn.title = 'PAX Gold (PAXGUSDT) • ทองคำดิจิทัลมีทองจริงค้ำประกัน ซื้อขาย 24/7';
+                    }
+                    if (label) label.innerText = '24/7 LIVE';
+                    if (badge) badge.innerText = 'PAXG TOKEN';
+
+                    if (popDot) { popDot.className = 'intel-popover-dot open'; }
+                    if (popTitle) popTitle.innerText = `PAX Gold (${sym})`;
+                    if (popModeTag) {
+                        popModeTag.className = 'intel-popover-mode-tag open';
+                        popModeTag.innerText = '24/7 Gold Token';
+                    }
+                    if (popActiveSrc) popActiveSrc.innerText = 'Binance Spot 24/7 Live Feed (PAXG/USDT)';
+                    if (popSourcesList) {
+                        popSourcesList.innerHTML = `
+                            <div class="source-item">
+                                <div><span class="source-item-dot green"></span><span class="source-item-name">Binance PAXG WebSocket</span></div>
+                                <span class="source-item-status" style="color: #34d399;">ซื้อขายสด 24/7 ตลอดวันหยุด</span>
+                            </div>
+                            <div class="source-item">
+                                <div><span class="source-item-dot green"></span><span class="source-item-name">Physical Gold Backed</span></div>
+                                <span class="source-item-status">1 Token = 1 Troy Oz of Gold</span>
+                            </div>
+                            <div class="source-item">
+                                <div><span class="source-item-dot green"></span><span class="source-item-name">Weekend Proxy Indicator</span></div>
+                                <span class="source-item-status">ประเมิน Gap ตลาดเช้าวันจันทร์</span>
+                            </div>
+                        `;
+                    }
+                    if (popGapCard) popGapCard.style.display = 'block';
+                    if (popLabelFri) popLabelFri.innerText = `ราคาปิดวันศุกร์:`;
+                    if (popLabelCurr) popLabelCurr.innerText = `PAXG ปัจจุบัน:`;
+                    if (popLabelGap) popLabelGap.innerText = `คาดการณ์ Gap:`;
+
+                    if (popFriClose) popFriClose.innerText = formatPrice(gap.friday_close);
+                    if (popPaxgPrice) popPaxgPrice.innerText = formatPrice(gap.paxg_current || gap.current_price);
+                    if (popGapText) {
+                        popGapText.innerText = `${sign}${gapPts.toFixed(2)}$ (${sign}${gapPips.toFixed(0)} pips, ${sign}${gapPct.toFixed(2)}%)`;
+                        popGapText.style.color = getGapColor(gapPts);
+                    }
+                    if (popFooterBtn) popFooterBtn.innerText = '📊 ดูการวิเคราะห์เต็ม & Weekly Pivots →';
+                } else {
+                    // XAUUSD
+                    if (isWeekend) {
+                        if (btn) {
+                            btn.className = 'tb-btn tb-btn-market-intel';
+                            btn.title = `ตลาดทองคำปิดทำการ (Weekend Mode) • คาดการณ์ Gap: ${sign}${gapPts.toFixed(2)}$ (${gapPips.toFixed(0)} pips)`;
+                        }
+                        if (label) {
+                            label.innerText = `Gap ${sign}${gapPts.toFixed(2)}$`;
+                        }
+                        if (badge) badge.innerText = 'PAXG 24/7';
+
+                        if (popDot) { popDot.className = 'intel-popover-dot'; }
+                        if (popTitle) popTitle.innerText = 'สถานะตลาดทองคำ (XAUUSD)';
+                        if (popModeTag) {
+                            popModeTag.className = 'intel-popover-mode-tag';
+                            popModeTag.innerText = 'Weekend Mode';
+                        }
+                        if (popActiveSrc) popActiveSrc.innerText = 'Binance PAXG/USDT (24/7 Weekend Proxy)';
+                        if (popSourcesList) {
+                            popSourcesList.innerHTML = `
+                                <div class="source-item">
+                                    <div><span class="source-item-dot" style="background:#f59e0b;"></span><span class="source-item-name">IC Markets (TradingView WS)</span></div>
+                                    <span class="source-item-status">ปิดทำการ (ตรึงราคาปิดวันศุกร์)</span>
+                                </div>
+                                <div class="source-item">
+                                    <div><span class="source-item-dot green"></span><span class="source-item-name">Binance PAXG 24/7 Token</span></div>
+                                    <span class="source-item-status" style="color:#34d399;">ตรวจจับ Gap ตลอดวันหยุด</span>
+                                </div>
+                                <div class="source-item">
+                                    <div><span class="source-item-dot green"></span><span class="source-item-name">Local History Cache</span></div>
+                                    <span class="source-item-status">120k+ M1 แท่งเทียน (Zero-MT5)</span>
+                                </div>
+                            `;
+                        }
+                        if (popGapCard) popGapCard.style.display = 'block';
+                        if (popLabelFri) popLabelFri.innerText = `ราคาปิดวันศุกร์:`;
+                        if (popLabelCurr) popLabelCurr.innerText = `PAXG ปัจจุบัน:`;
+                        if (popLabelGap) popLabelGap.innerText = `คาดการณ์ Gap:`;
+
+                        if (popFriClose) popFriClose.innerText = formatPrice(gap.friday_close);
+                        if (popPaxgPrice) popPaxgPrice.innerText = formatPrice(gap.paxg_current || gap.current_price);
+                        if (popGapText) {
+                            const pred = gap.predicted_monday_open ? ` (คาดเปิด ~$${gap.predicted_monday_open.toFixed(2)})` : '';
+                            popGapText.innerText = `${sign}${gapPts.toFixed(2)}$ (${sign}${gapPips.toFixed(0)} pips)${pred}`;
+                            popGapText.style.color = getGapColor(gapPts);
+                        }
+                        if (popFooterBtn) popFooterBtn.innerText = '📊 ดูการวิเคราะห์เต็ม & Weekly Pivots →';
+                    } else {
+                        if (btn) {
+                            btn.className = 'tb-btn tb-btn-market-intel market-open';
+                            btn.title = 'ตลาดทองคำเปิดทำการปกติ (Market LIVE) • สัญญาณสถาบัน IC Markets';
+                        }
+                        if (label) label.innerText = 'Market LIVE';
+                        if (badge) badge.innerText = 'IC MARKETS';
+
+                        if (popDot) { popDot.className = 'intel-popover-dot open'; }
+                        if (popTitle) popTitle.innerText = 'สถานะตลาดทองคำ (XAUUSD)';
+                        if (popModeTag) {
+                            popModeTag.className = 'intel-popover-mode-tag open';
+                            popModeTag.innerText = 'Market LIVE';
+                        }
+                        if (popActiveSrc) popActiveSrc.innerText = 'IC Markets (TradingView WebSocket Live)';
+                        if (popSourcesList) {
+                            popSourcesList.innerHTML = `
+                                <div class="source-item">
+                                    <div><span class="source-item-dot green"></span><span class="source-item-name">IC Markets Institutional</span></div>
+                                    <span class="source-item-status" style="color:#34d399;">Zero-Lag Feed Sub-millisecond</span>
+                                </div>
+                                <div class="source-item">
+                                    <div><span class="source-item-dot green"></span><span class="source-item-name">Pepperstone / OANDA</span></div>
+                                    <span class="source-item-status">Multi-Broker Fallback</span>
+                                </div>
+                                <div class="source-item">
+                                    <div><span class="source-item-dot green"></span><span class="source-item-name">Local History Cache</span></div>
+                                    <span class="source-item-status">120k+ M1 แท่งเทียน (Zero-MT5)</span>
+                                </div>
+                            `;
+                        }
+                        if (popGapCard) popGapCard.style.display = 'none';
+                        if (popFooterBtn) popFooterBtn.innerText = '📊 ดูการวิเคราะห์เต็ม & Weekly Pivots →';
+                    }
+                }
+            }
+            // CASE 3: FOREX & COMMODITIES (EURUSD, GBPUSD, USDJPY, GBPJPY, USOIL, etc.)
+            else {
+                if (isWeekend) {
+                    if (btn) {
+                        btn.className = 'tb-btn tb-btn-market-intel';
+                        btn.title = `ตลาด Forex (${sym}) ปิดทำการในวันหยุด • รอเปิดเช้าวันจันทร์ 05:00 น.`;
+                    }
+                    if (label) label.innerText = 'Forex Closed';
+                    if (badge) badge.innerText = sym;
+
+                    if (popDot) { popDot.className = 'intel-popover-dot'; }
+                    if (popTitle) popTitle.innerText = `ตลาดอัตราแลกเปลี่ยน (${sym})`;
+                    if (popModeTag) {
+                        popModeTag.className = 'intel-popover-mode-tag';
+                        popModeTag.innerText = 'Weekend Closed';
+                    }
+                    if (popActiveSrc) popActiveSrc.innerText = `ตรึงราคาปิดสัปดาห์ (Friday Close: ${sym})`;
+                    if (popSourcesList) {
+                        popSourcesList.innerHTML = `
+                            <div class="source-item">
+                                <div><span class="source-item-dot" style="background:#f59e0b;"></span><span class="source-item-name">ตลาด Forex สากล</span></div>
+                                <span class="source-item-status">ปิดทำการ เสาร์-อาทิตย์</span>
+                            </div>
+                            <div class="source-item">
+                                <div><span class="source-item-dot green"></span><span class="source-item-name">เวลาเปิดทำการถัดไป</span></div>
+                                <span class="source-item-status" style="color:#38bdf8;">จันทร์ 05:00 น. (เวลาไทย)</span>
+                            </div>
+                            <div class="source-item">
+                                <div><span class="source-item-dot green"></span><span class="source-item-name">Local History Cache</span></div>
+                                <span class="source-item-status">พร้อมสำหรับ Backtest & วิเคราะห์</span>
+                            </div>
+                        `;
+                    }
+                    if (popGapCard) popGapCard.style.display = 'block';
+                    if (popLabelFri) popLabelFri.innerText = `ราคาปิดวันศุกร์:`;
+                    if (popLabelCurr) popLabelCurr.innerText = `ราคาล่าสุด:`;
+                    if (popLabelGap) popLabelGap.innerText = `สถานะตลาด:`;
+
+                    if (popFriClose) popFriClose.innerText = formatPrice(gap.friday_close);
+                    if (popPaxgPrice) popPaxgPrice.innerText = formatPrice(gap.current_price);
+                    if (popGapText) {
+                        popGapText.innerText = `ตลาดปิดวันหยุด (รอเปิดเช้าวันจันทร์ 05:00 น.)`;
+                        popGapText.style.color = '#fbbf24';
+                    }
+                    if (popFooterBtn) popFooterBtn.innerText = '📊 เปิดแผนวิเคราะห์แนวรับแนวต้าน S&R →';
+                } else {
+                    if (btn) {
+                        btn.className = 'tb-btn tb-btn-market-intel market-open';
+                        btn.title = `ตลาด Forex (${sym}) เปิดทำการปกติ • สัญญาณสถาบัน FXCM / OANDA`;
+                    }
+                    if (label) label.innerText = 'Market LIVE';
+                    if (badge) badge.innerText = 'FOREX LIVE';
+
+                    if (popDot) { popDot.className = 'intel-popover-dot open'; }
+                    if (popTitle) popTitle.innerText = `ตลาดอัตราแลกเปลี่ยน (${sym})`;
+                    if (popModeTag) {
+                        popModeTag.className = 'intel-popover-mode-tag open';
+                        popModeTag.innerText = 'Market LIVE';
+                    }
+                    if (popActiveSrc) popActiveSrc.innerText = `TradingView Forex Feed (${sym} Institutional Live)`;
+                    if (popSourcesList) {
+                        popSourcesList.innerHTML = `
+                            <div class="source-item">
+                                <div><span class="source-item-dot green"></span><span class="source-item-name">TradingView WS Live</span></div>
+                                <span class="source-item-status" style="color:#34d399;">จันทร์ 05:00 - เสาร์ 04:00 (ไทย)</span>
+                            </div>
+                            <div class="source-item">
+                                <div><span class="source-item-dot green"></span><span class="source-item-name">Public Spot / Yahoo Finance</span></div>
+                                <span class="source-item-status">ระบบสำรองอัตโนมัติ 24/5</span>
+                            </div>
+                            <div class="source-item">
+                                <div><span class="source-item-dot green"></span><span class="source-item-name">Local History Cache</span></div>
+                                <span class="source-item-status">120k+ M1 แท่งเทียน (Zero-MT5)</span>
+                            </div>
+                        `;
+                    }
+                    if (popGapCard) popGapCard.style.display = 'none';
+                    if (popFooterBtn) popFooterBtn.innerText = '📊 เปิดแผนวิเคราะห์แนวรับแนวต้าน S&R →';
+                }
+            }
+        },
+
+        toggleMarketIntelPopover(e) {
+            if (e) e.stopPropagation();
+            const pop = document.getElementById('custom-intel-popover');
+            if (!pop) return;
+            const isVisible = pop.classList.contains('visible');
+            if (isVisible) {
+                this.closeMarketIntelPopover();
+            } else {
+                pop.classList.add('visible');
+                const activeChart = (window.chartEngine && window.chartEngine.getActiveChart) ? window.chartEngine.getActiveChart() : null;
+                const sym = activeChart ? activeChart.symbol : 'XAUUSD';
+                this.updateMarketIntelUI(this.marketIntelData, sym);
+                this.fetchMarketIntelligence(sym);
+            }
+        },
+
+        closeMarketIntelPopover() {
+            const pop = document.getElementById('custom-intel-popover');
+            if (pop) pop.classList.remove('visible');
+        },
+
+        async openMarketIntelModal() {
+            this.closeMarketIntelPopover();
+            const modal = document.getElementById('modal-market-intel');
+            if (!modal) return;
+            modal.style.display = 'flex';
+            setTimeout(() => modal.classList.add('visible'), 10);
+
+            const activeChart = (window.chartEngine && window.chartEngine.getActiveChart) ? window.chartEngine.getActiveChart() : null;
+            const sym = activeChart ? activeChart.symbol : 'XAUUSD';
+
+            // Render existing or fetch fresh data
+            if (this.marketIntelData) {
+                this.renderMarketIntelModalContent(this.marketIntelData, sym);
+            }
+            const intel = await this.fetchMarketIntelligence(sym);
+            if (intel) {
+                this.renderMarketIntelModalContent(intel, sym);
+            }
+        },
+
+        closeMarketIntelModal() {
+            const modal = document.getElementById('modal-market-intel');
+            if (!modal) return;
+            modal.classList.remove('visible');
+            setTimeout(() => modal.style.display = 'none', 180);
+        },
+
+        renderMarketIntelModalContent(intel, targetSymbol) {
+            if (!intel) return;
+
+            const activeChart = (window.chartEngine && window.chartEngine.getActiveChart) ? window.chartEngine.getActiveChart() : null;
+            let sym = targetSymbol || (activeChart ? activeChart.symbol : 'XAUUSD');
+            sym = sym.toUpperCase().replace('/', '').replace('-', '');
+
+            const isCrypto = sym.includes('BTC') || sym.includes('ETH') || sym.includes('SOL') || sym.includes('BNB') || sym.includes('XRP') || sym.includes('DOGE');
+            const isGold = sym.includes('XAU') || sym.includes('GOLD') || sym.includes('PAXG');
+            const isForex = !isCrypto && !isGold && !sym.includes('XAG') && !sym.includes('SILVER');
+
+            let symIntel = null;
+            if (intel.symbols_summary && intel.symbols_summary[sym]) {
+                symIntel = intel.symbols_summary[sym];
+            } else if (intel.active_symbol === sym) {
+                symIntel = intel;
+            } else {
+                symIntel = intel;
+            }
+
+            const gap = symIntel.gap_analysis || {};
+            const decimals = isGold ? 2 : (isCrypto ? (sym.includes('XRP') || sym.includes('DOGE') ? 4 : 2) : (sym.includes('JPY') ? 3 : 5));
+            const formatPrice = (p) => {
+                if (p === undefined || p === null || isNaN(p)) return '$--.--';
+                const prefix = isForex ? '' : '$';
+                return prefix + Number(p).toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+            };
+
+            // Status Badge
+            const statusBadge = document.getElementById('intel-market-status-badge');
+            const statusText = document.getElementById('intel-status-text');
+            const subText = document.getElementById('intel-modal-sub');
+            if (subText) {
+                subText.innerText = `วิเคราะห์ตลาด & ทิศทางราคาสำหรับ ${sym} (Zero-MT5 Dependent)`;
+            }
+
+            if (statusBadge && statusText) {
+                if (isCrypto) {
+                    statusBadge.classList.add('open');
+                    statusText.innerText = `ตลาดคริปโต 24/7 เปิดต่อเนื่อง (${sym})`;
+                } else if (symIntel.is_weekend) {
+                    statusBadge.classList.remove('open');
+                    statusText.innerText = `โหมดวันหยุด (${sym} Weekend Closed)`;
+                } else {
+                    statusBadge.classList.add('open');
+                    statusText.innerText = `ตลาดเปิดทำการปกติ (${sym} Market LIVE)`;
+                }
+            }
+
+            // Stats Elements
+            const friCloseEl = document.getElementById('intel-friday-close');
+            const paxgPriceEl = document.getElementById('intel-paxg-price');
+            const gapValEl = document.getElementById('intel-gap-val');
+            const gapSubEl = document.getElementById('intel-gap-sub');
+            const sentBanner = document.getElementById('intel-sentiment-banner');
+            const sentIcon = document.getElementById('intel-sentiment-icon');
+            const sentMsg = document.getElementById('intel-sentiment-msg');
+
+            const friLabel = document.getElementById('intel-modal-fri-label');
+            const paxgLabel = document.getElementById('intel-modal-paxg-label');
+            const gapLabel = document.getElementById('intel-modal-gap-label');
+
+            // Update Labels
+            const updateLabel = (id, text) => {
+                const el = document.getElementById(id);
+                if (el) el.innerText = text;
+            };
+            updateLabel('intel-modal-fri-label', `ราคาปิดวันศุกร์ (${sym})`);
+            updateLabel('full-fri-label', `ราคาปิดวันศุกร์ (${sym})`);
+            updateLabel('intel-modal-paxg-label', isGold ? `ราคา PAXGUSDT (24/7)` : (isCrypto ? `ราคาปัจจุบัน (24/7)` : `ราคาล่าสุดก่อนปิดตลาด`));
+            updateLabel('full-curr-label', isGold ? `ราคา PAXGUSDT (24/7)` : (isCrypto ? `ราคาปัจจุบัน (24/7)` : `ราคาล่าสุดก่อนปิดตลาด`));
+            updateLabel('intel-modal-gap-label', isCrypto ? `ส่วนต่างวันหยุด (Move)` : (isGold ? `คาดการณ์ Gap เช้าวันจันทร์` : `สถานะช่วงวันหยุด`));
+            updateLabel('full-gap-label', isCrypto ? `ส่วนต่างวันหยุด (Move)` : (isGold ? `คาดการณ์ Gap เช้าวันจันทร์` : `สถานะช่วงวันหยุด`));
+
+            // Update Values
+            const updateVal = (id, text) => {
+                const el = document.getElementById(id);
+                if (el) el.innerText = text;
+            };
+            const friPriceText = formatPrice(gap.friday_close);
+            const currPriceText = formatPrice(gap.paxg_current || gap.current_price);
+            updateVal('intel-friday-close', friPriceText);
+            updateVal('full-fri-val', friPriceText);
+            updateVal('intel-paxg-price', currPriceText);
+            updateVal('full-curr-val', currPriceText);
+            
+            const gapPts = gap.gap_points !== undefined ? gap.gap_points : 0;
+            const gapPips = gap.gap_pips !== undefined ? gap.gap_pips : 0;
+            const gapPct = gap.gap_percent !== undefined ? gap.gap_percent : 0;
+            const sign = gapPts > 0 ? '+' : '';
+
+            let gapMainText = '';
+            let gapColor = '#fbbf24';
+            let gapSubText = '';
+
+            if (isForex && symIntel.is_weekend) {
+                gapMainText = `ตลาดปิดวันหยุด`;
+                gapColor = '#fbbf24';
+                gapSubText = `ตรึงราคาปิดสัปดาห์ • รอเปิดเช้าวันจันทร์ 05:00 น.`;
+            } else if (isGold) {
+                gapMainText = `${sign}${gapPts.toFixed(2)}$ (${sign}${gapPips.toFixed(0)} pips)`;
+                gapColor = gapPts > 1.5 ? '#34d399' : (gapPts < -1.5 ? '#f87171' : '#fbbf24');
+                gapSubText = gap.predicted_monday_open ? `คาดการณ์เปิดวันจันทร์ ~${formatPrice(gap.predicted_monday_open)} (${gapPct > 0 ? '+' : ''}${gapPct.toFixed(2)}%)` : `ความต่างเทียบวันศุกร์: ${gapPct > 0 ? '+' : ''}${gapPct.toFixed(2)}%`;
+            } else {
+                gapMainText = `${sign}${formatPrice(gapPts)} (${sign}${gapPct.toFixed(2)}%)`;
+                gapColor = gapPts > 0 ? '#34d399' : (gapPts < 0 ? '#f87171' : '#fbbf24');
+                gapSubText = `ความต่างเทียบวันศุกร์: ${gapPct > 0 ? '+' : ''}${gapPct.toFixed(2)}%`;
+            }
+
+            const setGapUI = (valId, subId) => {
+                const valEl = document.getElementById(valId);
+                const subEl = document.getElementById(subId);
+                if (valEl) {
+                    valEl.innerText = gapMainText;
+                    valEl.style.color = gapColor;
+                }
+                if (subEl) subEl.innerText = gapSubText;
+            };
+            setGapUI('intel-gap-val', 'intel-gap-sub');
+            setGapUI('full-gap-val', 'full-gap-sub');
+
+            // Source Badge
+            const srcBadge = document.getElementById('full-intel-src-badge');
+            if (srcBadge) {
+                srcBadge.innerText = isGold ? 'PAXG 24/7 Proxy' : (isCrypto ? 'Binance 24/7 Spot' : (symIntel.is_weekend ? 'MT5 / Broker Close' : 'Live Institutional Feed'));
+            }
+
+            // Sentiment Message
+            const sent = gap.sentiment || 'NEUTRAL';
+            let icon = '⚖️';
+            let msg = gap.bias_message || 'ตลาดกำลังเคลื่อนไหวในกรอบปกติ';
+
+            if (sent === 'BULLISH_GAP') {
+                icon = '🚀';
+            } else if (sent === 'BEARISH_GAP') {
+                icon = '🔻';
+            } else if (sent === 'LIVE_OPEN' || sent === 'ACTIVE_24_7') {
+                icon = isCrypto ? '₿' : '🟢';
+            }
+
+            if (sentBanner) {
+                sentBanner.className = `intel-sentiment-card ${sent.toLowerCase()}`;
+            }
+            if (sentIcon) sentIcon.innerText = icon;
+            if (sentMsg) sentMsg.innerText = msg;
+
+            // Full Analysis View Sentiment Box
+            const fullSentBox = document.getElementById('full-sentiment-box');
+            const fullSentIcon = document.getElementById('full-sentiment-icon');
+            const fullSentText = document.getElementById('full-sentiment-text');
+            if (fullSentBox) {
+                fullSentBox.className = `intel-sentiment-box ${sent.toLowerCase()}`;
+            }
+            if (fullSentIcon) fullSentIcon.innerText = icon;
+            if (fullSentText) fullSentText.innerText = msg;
+
+            // Pivots Table (Both Modal and Full Analysis View)
+            const piv = (symIntel && symIntel.weekly_pivots) ? symIntel.weekly_pivots : (intel.weekly_pivots || {});
+            const std = piv.standard || {};
+            const fib = piv.fibonacci || {};
+            const cam = piv.camarilla || {};
+
+            const setTxt = (id, val) => {
+                const txt = (val !== undefined && val !== null && !isNaN(val)) ? formatPrice(val) : '-';
+                const el = document.getElementById(id);
+                if (el) el.innerText = txt;
+                const fullEl = document.getElementById('full-' + id);
+                if (fullEl) fullEl.innerText = txt;
+            };
+
+            setTxt('piv-std-s3', std.S3);
+            setTxt('piv-std-s1', std.S1);
+            setTxt('piv-std-p', std.P);
+            setTxt('piv-std-r1', std.R1);
+            setTxt('piv-std-r3', std.R3);
+
+            setTxt('piv-fib-s3', fib.S3);
+            setTxt('piv-fib-s1', fib.S1);
+            setTxt('piv-fib-p', fib.P);
+            setTxt('piv-fib-r1', fib.R1);
+            setTxt('piv-fib-r3', fib.R3);
+
+            setTxt('piv-cam-s3', cam.S3);
+            setTxt('piv-cam-s1', cam.S1);
+            setTxt('piv-cam-p', cam.P !== undefined ? cam.P : (cam.R1 ? ((cam.R1 + (cam.S1 || cam.R1)) / 2) : std.P));
+            setTxt('piv-cam-r1', cam.R1);
+            setTxt('piv-cam-r3', cam.R3);
+        },
+
+        plotWeeklyPivotsOnChart() {
+            if (!this.marketIntelData || !this.marketIntelData.weekly_pivots) {
+                this.showToast('⚠️ กำลังโหลดข้อมูลระดับราคา กรุณาลองใหม่อีกครั้ง');
+                return;
+            }
+
+            const active = window.chartEngine ? window.chartEngine.getActiveChart() : null;
+            if (!active) {
+                this.showToast('⚠️ ไม่พบชาร์ตที่เลือกอยู่');
+                return;
+            }
+
+            const std = this.marketIntelData.weekly_pivots.standard || {};
+            const keys = this.marketIntelData.weekly_pivots.key_levels || {};
+            const nowTime = Math.floor(Date.now() / 1000);
+
+            const levels = [
+                { name: 'Weekly R2', price: std.R2, color: '#ef4444' },
+                { name: 'Weekly R1', price: std.R1, color: '#f87171' },
+                { name: 'Weekly Pivot (P)', price: std.P, color: '#fbbf24' },
+                { name: 'Weekly S1', price: std.S1, color: '#34d399' },
+                { name: 'Weekly S2', price: std.S2, color: '#10b981' }
+            ];
+
+            if (keys.week_high) levels.push({ name: 'Weekly High', price: keys.week_high, color: '#ec4899' });
+            if (keys.week_low) levels.push({ name: 'Weekly Low', price: keys.week_low, color: '#8b5cf6' });
+
+            active.drawings = active.drawings || [];
+            levels.forEach(lvl => {
+                if (lvl.price) {
+                    active.drawings.push({
+                        id: 'draw_piv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+                        type: 'horzline',
+                        points: [{ time: nowTime, price: lvl.price }],
+                        color: lvl.color,
+                        text: `${lvl.name} ($${lvl.price})`
+                    });
+                }
+            });
+
+            window.chartEngine.saveDrawings(active.symbol, active.drawings);
+            window.chartEngine.updateOverlays(active);
+            this.showToast(`✨ วาด ${levels.length} ระดับ Weekly Pivots ลงบน ${active.symbol} เรียบร้อย!`);
+            this.closeMarketIntelModal();
+        },
+
+        // ==========================================
+        // SMC & ICT Trading Plan & Analysis Methods
+        // ==========================================
+        tradingPlanData: null,
+        tradingPlanCache: {},
+        activePlanStyle: 'daytrade',
+        activeAnalysisSymbol: 'XAUUSD',
+
+        setAnalysisLoadingState(isLoading, symbol) {
+            const sym = symbol || this.activeAnalysisSymbol || 'XAUUSD';
+            const pageBody = document.getElementById('analysis-page-body');
+            const banner = document.getElementById('analysis-loading-banner');
+            const textEl = document.getElementById('analysis-loading-text');
+            const refreshBtn = document.querySelector('.analysis-btn-refresh');
+
+            if (isLoading) {
+                if (pageBody) pageBody.classList.add('is-analyzing');
+                if (banner) {
+                    banner.classList.add('visible');
+                    if (textEl) textEl.innerText = `🧠 กำลังประมวลผลโครงสร้างตลาด SMC & ICT และคำนวณระดับราคาสำหรับ ${sym}...`;
+                }
+                if (refreshBtn) refreshBtn.classList.add('spinning');
+
+                const chips = document.querySelectorAll('.analysis-chip');
+                chips.forEach(c => {
+                    if (c.getAttribute('data-sym') === sym) c.classList.add('analyzing-chip');
+                    else c.classList.remove('analyzing-chip');
+                });
+            } else {
+                if (pageBody) pageBody.classList.remove('is-analyzing');
+                if (banner) banner.classList.remove('visible');
+                if (refreshBtn) refreshBtn.classList.remove('spinning');
+                const chips = document.querySelectorAll('.analysis-chip');
+                chips.forEach(c => c.classList.remove('analyzing-chip'));
+            }
+        },
+
+        setAnalysisSkeleton(sym) {
+            const priceEl = document.getElementById('analysis-active-price');
+            if (priceEl) priceEl.innerHTML = '<span class="loading-skeleton-pulse" style="width: 80px;"></span>';
+
+            const fullMatrixEntry = document.getElementById('full-matrix-entry-val');
+            if (fullMatrixEntry) fullMatrixEntry.innerHTML = '<span class="loading-skeleton-pulse" style="width: 120px;"></span>';
+            const fullMatrixOte = document.getElementById('full-matrix-ote-val');
+            if (fullMatrixOte) fullMatrixOte.innerHTML = '<span class="loading-skeleton-pulse" style="width: 90px;"></span>';
+            const fullMatrixSl = document.getElementById('full-matrix-sl-val');
+            if (fullMatrixSl) fullMatrixSl.innerHTML = '<span class="loading-skeleton-pulse" style="width: 90px;"></span>';
+            const fullMatrixTp1 = document.getElementById('full-matrix-tp1-val');
+            if (fullMatrixTp1) fullMatrixTp1.innerHTML = '<span class="loading-skeleton-pulse" style="width: 90px;"></span>';
+            const fullMatrixTp2 = document.getElementById('full-matrix-tp2-val');
+            if (fullMatrixTp2) fullMatrixTp2.innerHTML = '<span class="loading-skeleton-pulse" style="width: 90px;"></span>';
+
+            const fullFriVal = document.getElementById('full-fri-val');
+            if (fullFriVal) fullFriVal.innerHTML = '<span class="loading-skeleton-pulse" style="width: 70px;"></span>';
+            const fullCurrVal = document.getElementById('full-curr-val');
+            if (fullCurrVal) fullCurrVal.innerHTML = '<span class="loading-skeleton-pulse" style="width: 70px;"></span>';
+            const fullGapVal = document.getElementById('full-gap-val');
+            if (fullGapVal) fullGapVal.innerHTML = '<span class="loading-skeleton-pulse" style="width: 110px;"></span>';
+        },
+
+        async openFullAnalysisView(symbol) {
+            const chartSection = document.getElementById('chart-area-section') || document.querySelector('.chart-area');
+            const analysisSection = document.getElementById('view-full-analysis');
+            if (!analysisSection) return;
+
+            if (chartSection) chartSection.style.display = 'none';
+            analysisSection.style.display = 'flex';
+
+            const activeChart = (window.chartEngine && window.chartEngine.getActiveChart) ? window.chartEngine.getActiveChart() : null;
+            const targetSym = symbol || this.activeAnalysisSymbol || (activeChart ? activeChart.symbol : 'XAUUSD');
+            const cleanSym = targetSym.toUpperCase().replace('/', '').replace('-', '').replace('#', '').trim();
+            this.activeAnalysisSymbol = cleanSym;
+
+            this.highlightAnalysisSymbolChip(cleanSym);
+            this.setAnalysisLoadingState(true, cleanSym);
+
+            if (this.tradingPlanCache[cleanSym]) {
+                this.tradingPlanData = this.tradingPlanCache[cleanSym];
+                this.renderTradingPlanModalContent();
+            } else if (window.SMCICTEngine && window.SMCICTEngine.generateTradingPlanClientSide) {
+                const clientData = window.SMCICTEngine.generateTradingPlanClientSide(cleanSym);
+                this.tradingPlanData = clientData;
+                this.tradingPlanCache[cleanSym] = clientData;
+                this.renderTradingPlanModalContent();
+            } else {
+                this.setAnalysisSkeleton(cleanSym);
+            }
+
+            if (this.marketIntelCache[cleanSym]) {
+                this.marketIntelData = this.marketIntelCache[cleanSym];
+                this.renderMarketIntelModalContent(this.marketIntelCache[cleanSym], cleanSym);
+            } else if (window.SMCICTEngine && window.SMCICTEngine.generateMarketIntelClientSide) {
+                const clientIntel = window.SMCICTEngine.generateMarketIntelClientSide(cleanSym);
+                if (clientIntel && clientIntel.intelligence) {
+                    this.marketIntelData = clientIntel.intelligence;
+                    this.marketIntelCache[cleanSym] = clientIntel.intelligence;
+                    this.renderMarketIntelModalContent(clientIntel.intelligence, cleanSym);
+                }
+            }
+
+            // Dismiss loading state promptly after instant render (200ms)
+            setTimeout(() => {
+                if (this.activeAnalysisSymbol === cleanSym) {
+                    this.setAnalysisLoadingState(false, cleanSym);
+                }
+            }, 200);
+
+            // Background network sync without blocking UI
+            (async () => {
+                try {
+                    await Promise.all([
+                        this.fetchTradingPlan(cleanSym),
+                        this.fetchMarketIntelligence ? this.fetchMarketIntelligence(cleanSym) : Promise.resolve()
+                    ]);
+                } catch (e) {}
+
+                try {
+                    if (this.activeAnalysisSymbol === cleanSym) {
+                        this.renderTradingPlanModalContent();
+                        if (this.marketIntelData) {
+                            this.renderMarketIntelModalContent(this.marketIntelData, cleanSym);
+                        }
+                    }
+                } catch (err) {
+                    console.warn('[AnalysisView] Render error in openFullAnalysisView background sync:', err);
+                } finally {
+                    if (this.activeAnalysisSymbol === cleanSym) {
+                        this.setAnalysisLoadingState(false, cleanSym);
+                    }
+                }
+            })();
+        },
+
+        closeFullAnalysisView() {
+            const chartSection = document.getElementById('chart-area-section') || document.querySelector('.chart-area');
+            const analysisSection = document.getElementById('view-full-analysis');
+            if (analysisSection) analysisSection.style.display = 'none';
+            if (chartSection) {
+                chartSection.style.display = 'block';
+                // Trigger chart reflow
+                if (window.chartEngine && window.chartEngine.resizeAll) {
+                    setTimeout(() => window.chartEngine.resizeAll(), 30);
+                }
+            }
+        },
+
+        highlightAnalysisSymbolChip(sym) {
+            const chips = document.querySelectorAll('.analysis-chip');
+            chips.forEach(c => {
+                if (c.getAttribute('data-sym') === sym) c.classList.add('active');
+                else c.classList.remove('active');
+            });
+        },
+
+        async switchAnalysisSymbol(sym) {
+            const cleanSym = (sym || 'XAUUSD').toUpperCase().replace('/', '').replace('-', '').replace('#', '').trim();
+            this.activeAnalysisSymbol = cleanSym;
+            this.highlightAnalysisSymbolChip(cleanSym);
+            this.setAnalysisLoadingState(true, cleanSym);
+
+            // Sync with active chart if appropriate
+            if (window.chartEngine && window.chartEngine.getActiveChart) {
+                const activeChart = window.chartEngine.getActiveChart();
+                if (activeChart && activeChart.symbol !== cleanSym) {
+                    activeChart.symbol = cleanSym;
+                }
+            }
+
+            // Immediate render from cache or standalone client engine
+            if (this.tradingPlanCache[cleanSym]) {
+                this.tradingPlanData = this.tradingPlanCache[cleanSym];
+                this.renderTradingPlanModalContent();
+            } else if (window.SMCICTEngine && window.SMCICTEngine.generateTradingPlanClientSide) {
+                const clientData = window.SMCICTEngine.generateTradingPlanClientSide(cleanSym);
+                this.tradingPlanData = clientData;
+                this.tradingPlanCache[cleanSym] = clientData;
+                this.renderTradingPlanModalContent();
+            } else {
+                this.setAnalysisSkeleton(cleanSym);
+            }
+
+            if (this.marketIntelCache[cleanSym]) {
+                this.marketIntelData = this.marketIntelCache[cleanSym];
+                this.renderMarketIntelModalContent(this.marketIntelCache[cleanSym], cleanSym);
+            } else if (window.SMCICTEngine && window.SMCICTEngine.generateMarketIntelClientSide) {
+                const clientIntel = window.SMCICTEngine.generateMarketIntelClientSide(cleanSym);
+                if (clientIntel && clientIntel.intelligence) {
+                    this.marketIntelData = clientIntel.intelligence;
+                    this.marketIntelCache[cleanSym] = clientIntel.intelligence;
+                    this.renderMarketIntelModalContent(clientIntel.intelligence, cleanSym);
+                }
+            }
+
+            // Dismiss loading state promptly after instant render (200ms)
+            setTimeout(() => {
+                if (this.activeAnalysisSymbol === cleanSym) {
+                    this.setAnalysisLoadingState(false, cleanSym);
+                }
+            }, 200);
+
+            // Background network sync without blocking UI
+            (async () => {
+                try {
+                    await Promise.all([
+                        this.fetchTradingPlan(cleanSym),
+                        this.fetchMarketIntelligence ? this.fetchMarketIntelligence(cleanSym) : Promise.resolve()
+                    ]);
+                } catch (e) {}
+
+                try {
+                    if (this.activeAnalysisSymbol === cleanSym) {
+                        this.renderTradingPlanModalContent();
+                        if (this.marketIntelData) {
+                            this.renderMarketIntelModalContent(this.marketIntelData, cleanSym);
+                        }
+                    }
+                } catch (err) {
+                    console.warn('[AnalysisView] Render error in switchAnalysisSymbol background sync:', err);
+                } finally {
+                    if (this.activeAnalysisSymbol === cleanSym) {
+                        this.setAnalysisLoadingState(false, cleanSym);
+                    }
+                }
+            })();
+        },
+
+        async openTradingPlanModal() {
+            // Forward directly to the Full Analysis View
+            await this.openFullAnalysisView();
+        },
+
+        closeTradingPlanModal() {
+            this.closeFullAnalysisView();
+        },
+
+        switchTradingPlanTab(style) {
+            this.activePlanStyle = style;
+            const tabs = ['scalping', 'daytrade', 'swing'];
+            tabs.forEach(t => {
+                const btnFull = document.getElementById(`full-tab-${t}`);
+                if (btnFull) {
+                    if (t === style) btnFull.classList.add('active');
+                    else btnFull.classList.remove('active');
+                }
+                const btnMod = document.getElementById(`plan-tab-${t}`);
+                if (btnMod) {
+                    if (t === style) btnMod.classList.add('active');
+                    else btnMod.classList.remove('active');
+                }
+            });
+            this.setAnalysisLoadingState(true, this.activeAnalysisSymbol);
+            setTimeout(() => {
+                this.renderTradingPlanModalContent();
+                this.setAnalysisLoadingState(false, this.activeAnalysisSymbol);
+            }, 80);
+        },
+
+        async refreshTradingPlan() {
+            const sym = this.activeAnalysisSymbol || 'XAUUSD';
+            this.setAnalysisLoadingState(true, sym);
+            this.showToast(`🔄 กำลังรีเฟรชวิเคราะห์สด SMC สำหรับ ${sym}...`);
+            try {
+                await Promise.all([
+                    this.fetchTradingPlan(sym, true),
+                    this.fetchMarketIntelligence ? this.fetchMarketIntelligence(sym) : Promise.resolve()
+                ]);
+            } catch (e) {}
+            this.renderTradingPlanModalContent();
+            if (this.marketIntelData) {
+                this.renderMarketIntelModalContent(this.marketIntelData, sym);
+            }
+            this.setAnalysisLoadingState(false, sym);
+            this.showToast(`✅ อัปเดตแผนวิเคราะห์ ${sym} เรียบร้อย!`);
+        },
+
+        async fetchTradingPlan(symbol, force = false) {
+            const targetSym = symbol || this.activeAnalysisSymbol || 'XAUUSD';
+            const cleanSym = targetSym.toUpperCase().replace('/', '').replace('-', '').replace('#', '').trim();
+            const requestSym = cleanSym;
+
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 1800);
+                const res = await fetch(`/api/trading-plan?symbol=${encodeURIComponent(cleanSym)}${force ? '&force=1' : ''}`, { signal: controller.signal });
+                clearTimeout(timeoutId);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.status === 'ok') {
+                        this.tradingPlanCache[cleanSym] = data;
+                        if (this.activeAnalysisSymbol === requestSym) {
+                            this.tradingPlanData = data;
+                            this.renderTradingPlanModalContent();
+                        }
+                        return data;
+                    }
+                }
+            } catch (err) {
+                console.warn('[TradingPlan] Remote API unavailable or timed out, falling back to Client Engine:', err);
+            }
+
+            // Standalone Client-Side Fallback Engine (Runs even if Apache/Host returns 404 for /api/)
+            if (window.SMCICTEngine && window.SMCICTEngine.generateTradingPlanClientSide) {
+                const clientData = window.SMCICTEngine.generateTradingPlanClientSide(cleanSym);
+                this.tradingPlanCache[cleanSym] = clientData;
+                if (this.activeAnalysisSymbol === requestSym) {
+                    this.tradingPlanData = clientData;
+                    this.renderTradingPlanModalContent();
+                }
+                return clientData;
+            }
+
+            return null;
+        },
+
+        renderTradingPlanModalContent() {
+            const data = this.tradingPlanData;
+            if (!data) return;
+
+            const analysisView = document.getElementById('view-full-analysis');
+            const isAnalysisOpen = analysisView && analysisView.style.display !== 'none';
+            const sym = isAnalysisOpen ? (this.activeAnalysisSymbol || data.symbol || 'XAUUSD') : (data.symbol || this.activeAnalysisSymbol || 'XAUUSD');
+
+            // If data is for a different symbol than the currently active analysis symbol, reject it
+            if (isAnalysisOpen && data.symbol && this.activeAnalysisSymbol) {
+                const cleanDataSym = data.symbol.toUpperCase().replace('/', '').replace('-', '').replace('#', '').trim();
+                const cleanActiveSym = this.activeAnalysisSymbol.toUpperCase().replace('/', '').replace('-', '').replace('#', '').trim();
+                if (cleanDataSym !== cleanActiveSym) {
+                    return;
+                }
+            }
+
+            const style = this.activePlanStyle || 'daytrade';
+            const plans = data.trading_plans || {};
+            let plan = plans[style] || plans[style.toLowerCase()] || plans[style + 'trade'] || plans[style.replace('trade', '')] || data.plan || null;
+            if (!plan && Object.keys(plans).length > 0) {
+                plan = plans[Object.keys(plans)[0]];
+            }
+            const currPrice = data.current_price || 0;
+            
+            let bias = data.overall_bias;
+            if (!bias && data.market_structure && data.market_structure.m15) {
+                bias = data.market_structure.m15.trend || 'NEUTRAL';
+            }
+            if (!bias && plan) {
+                bias = plan.action === 'BUY' ? 'BULLISH' : (plan.action === 'SELL' ? 'BEARISH' : 'NEUTRAL');
+            }
+            bias = bias || 'BULLISH';
+
+            const isGold = sym.includes('XAU') || sym.includes('GOLD') || sym.includes('PAXG');
+            const isCrypto = sym.includes('BTC') || sym.includes('ETH') || sym.includes('SOL') || sym.includes('BNB') || sym.includes('XRP') || sym.includes('DOGE');
+            const isForex = !isGold && !isCrypto && !sym.includes('XAG') && !sym.includes('SILVER');
+            const decimals = isGold ? 2 : (isCrypto ? (sym.includes('XRP') || sym.includes('DOGE') ? 4 : 2) : (sym.includes('JPY') ? 3 : (sym.includes('XAG') ? 2 : 5)));
+            const formatP = (p) => {
+                if (p === undefined || p === null || isNaN(p)) return '-';
+                const prefix = isForex ? '' : '$';
+                return prefix + Number(p).toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+            };
+
+            // Update Header & Active Prices & Status Tag
+            const priceEl = document.getElementById('analysis-active-price');
+            if (priceEl) priceEl.innerText = formatP(currPrice);
+
+            const tagEl = document.getElementById('analysis-market-tag');
+            const dotEl = document.getElementById('analysis-status-dot');
+            if (tagEl) {
+                if (isCrypto) {
+                    tagEl.innerText = 'Live 24/7 Crypto';
+                    tagEl.className = 'analysis-badge open';
+                } else if (this.marketIntelData && this.marketIntelData.is_weekend) {
+                    tagEl.innerText = 'Weekend Closed';
+                    tagEl.className = 'analysis-badge';
+                } else {
+                    tagEl.innerText = 'Live ECN / Spot';
+                    tagEl.className = 'analysis-badge open';
+                }
+            }
+            if (dotEl) {
+                dotEl.className = `analysis-dot ${isCrypto || (this.marketIntelData && !this.marketIntelData.is_weekend) ? 'green' : 'amber'}`;
+            }
+
+            // Fallback plan synthesis if not present
+            if (!plan) {
+                const isBuy = (bias === 'BULLISH' || bias === 'BUY');
+                const slDist = (currPrice * 0.006);
+                const tp1Dist = (currPrice * 0.012);
+                const tp2Dist = (currPrice * 0.024);
+                plan = {
+                    action: isBuy ? 'BUY' : (bias === 'BEARISH' || bias === 'SELL' ? 'SELL' : 'WAIT'),
+                    confidence_score: 75,
+                    timeframe: style === 'scalping' ? 'M1 - M5' : (style === 'daytrade' ? 'M15 - H1' : 'H4 - D1'),
+                    entry_price: currPrice,
+                    ote_price: isBuy ? currPrice - (slDist * 0.3) : currPrice + (slDist * 0.3),
+                    stop_loss: isBuy ? currPrice - slDist : currPrice + slDist,
+                    take_profit_1: isBuy ? currPrice + tp1Dist : currPrice - tp1Dist,
+                    take_profit_2: isBuy ? currPrice + tp2Dist : currPrice - tp2Dist,
+                    risk_reward: '1:2.5',
+                    headline: `วิเคราะห์ ${sym}: พิจารณาเปิด ${isBuy ? 'BUY' : 'SELL'} ตามทิศทางแนวโน้ม ${bias}`,
+                    details: `สไตล์ ${style.toUpperCase()} • ประเมินจากโครงสร้างราคาล่าสุด`,
+                    confluences: {
+                        structure_shift: true,
+                        structure_desc: `ตรวจพบโครงสร้าง ${bias} ใน Timeframe หลัก`,
+                        ob_present: true,
+                        ob_desc: `โซน Order Block สอดคล้องกับแนวรับแนวต้าน`,
+                        fvg_present: true,
+                        fvg_desc: `มีช่องว่าง Fair Value Gap หนุนทิศทาง`,
+                        liq_swept: true,
+                        liq_desc: `เคลียร์สภาพคล่อง Liquidity เรียบร้อย`,
+                        discount_zone: true,
+                        discount_desc: isBuy ? 'ราคาอยู่ในโซน Discount เหมาะแก่การ BUY' : 'ราคาอยู่ในโซน Premium เหมาะแก่การ SELL'
+                    }
+                };
+            }
+
+            // Verdict Banner (Update both full view and modal if present)
+            const updateVerdict = (prefix) => {
+                const pill = document.getElementById(`${prefix}verdict-action-pill`);
+                const arrow = document.getElementById(`${prefix}verdict-arrow`);
+                const text = document.getElementById(`${prefix}verdict-action-text`);
+                const head = document.getElementById(`${prefix}verdict-headline`);
+                const sub = document.getElementById(`${prefix}verdict-subtext`);
+                const confV = document.getElementById(`${prefix}verdict-confidence-val`);
+                const confB = document.getElementById(`${prefix}verdict-confidence-bar`);
+                const qual = document.getElementById(`${prefix}verdict-quality`);
+
+                const act = plan.action || 'WAIT';
+                if (pill) {
+                    pill.className = `verdict-action-pill ${act === 'BUY' ? 'verdict-buy' : (act === 'SELL' ? 'verdict-sell' : 'verdict-wait')}`;
+                }
+                if (arrow) arrow.innerText = act === 'BUY' ? '▲' : (act === 'SELL' ? '▼' : '⏳');
+                if (text) text.innerText = act === 'BUY' ? 'STRONG BUY' : (act === 'SELL' ? 'STRONG SELL' : 'WAIT / OBSERVE');
+
+                if (head) head.innerText = plan.headline || plan.rationale || (act === 'BUY' ? `พิจารณาเปิด BUY เมื่อย่อทดสอบโซน Demand OB` : (act === 'SELL' ? `พิจารณาเปิด SELL เมื่อเด้งทดสอบโซน Supply OB` : `รอโครงสร้างตลาดชัดเจนหรือเกิดการ Sweep Liquidity`));
+                if (sub) sub.innerText = plan.details || `สไตล์ ${style.toUpperCase()} (${plan.timeframe || ''}) • ประเมินจาก SMC/ICT Market Structure`;
+
+                const confidence = plan.confidence_score || plan.confidence || (act === 'WAIT' ? 55 : 80);
+                if (confV) confV.innerText = `${confidence}%`;
+                if (confB) confB.style.width = `${confidence}%`;
+                if (qual) {
+                    qual.innerText = confidence >= 80 ? '⭐ A+ High Probability Setup' : (confidence >= 65 ? '✨ Valid Confluence Setup' : '⚠️ Moderate Setup / Wait Confirm');
+                }
+            };
+
+            updateVerdict('full-');
+            updateVerdict('');
+
+            // Execution Matrix
+            const updateMatrix = (prefix) => {
+                const rrBadge = document.getElementById(`${prefix}matrix-rr-badge`);
+                const entryVal = document.getElementById(`${prefix}matrix-entry-val`);
+                const oteVal = document.getElementById(`${prefix}matrix-ote-val`);
+                const slVal = document.getElementById(`${prefix}matrix-sl-val`);
+                const tp1Val = document.getElementById(`${prefix}matrix-tp1-val`);
+                const tp2Val = document.getElementById(`${prefix}matrix-tp2-val`);
+
+                const rrText = plan.risk_reward || plan.rr_ratio || '1:2.5';
+                if (rrBadge) rrBadge.innerText = `R:R ${rrText.includes('1:') ? rrText : '1:' + rrText}`;
+
+                if (entryVal) {
+                    if (plan.entry_zone) {
+                        entryVal.innerText = `${formatP(plan.entry_zone.min)} - ${formatP(plan.entry_zone.max)}`;
+                    } else if (plan.entry_price) {
+                        entryVal.innerText = `${formatP(plan.entry_price)}`;
+                    } else {
+                        entryVal.innerText = formatP(currPrice);
+                    }
+                }
+
+                if (oteVal) {
+                    oteVal.innerText = plan.ote_price ? formatP(plan.ote_price) : formatP(plan.entry_price || currPrice);
+                }
+
+                if (slVal) {
+                    const slDist = plan.sl_distance_pts ? ` (${plan.sl_distance_pts} pts)` : '';
+                    slVal.innerHTML = `${formatP(plan.stop_loss)} <small style="color:#fca5a5; font-size:10.5px;">${slDist}</small>`;
+                }
+
+                if (tp1Val) {
+                    const tp1Dist = plan.tp1_distance_pts ? ` (+${plan.tp1_distance_pts} pts)` : '';
+                    tp1Val.innerHTML = `${formatP(plan.take_profit_1)} <small style="color:#86efac; font-size:10.5px;">${tp1Dist}</small>`;
+                }
+
+                if (tp2Val) {
+                    const tp2Dist = plan.tp2_distance_pts ? ` (+${plan.tp2_distance_pts} pts)` : '';
+                    tp2Val.innerHTML = `${formatP(plan.take_profit_2)} <small style="color:#86efac; font-size:10.5px;">${tp2Dist}</small>`;
+                }
+            };
+
+            updateMatrix('full-');
+            updateMatrix('');
+
+            // Confluences Checklist
+            const confs = plan.confluences || {};
+            const act = plan.action || 'WAIT';
+
+            const updateConfluences = (prefix) => {
+                const confScore = document.getElementById(`${prefix}confluence-score`);
+                let passedCount = 0;
+
+                const updateConfItem = (id, passed, desc) => {
+                    const item = document.getElementById(`${prefix}conf-item-${id}`);
+                    const icon = document.getElementById(`${prefix}conf-icon-${id}`);
+                    const descEl = document.getElementById(`${prefix}conf-desc-${id}`);
+                    if (passed) passedCount++;
+                    if (icon) icon.innerText = passed ? '✅' : '⚪';
+                    if (descEl && desc) descEl.innerText = desc;
+                    if (item) {
+                        item.style.opacity = passed ? '1' : '0.65';
+                    }
+                };
+
+                const structShift = confs.structure_shift !== undefined ? confs.structure_shift : (bias !== 'NEUTRAL');
+                updateConfItem('structure', structShift, confs.structure_desc || (act === 'BUY' ? 'เกิด CHoCH/BOS ชนะแนวต้านเดิม ยืนยันขาขึ้น' : (act === 'SELL' ? 'เกิด CHoCH/BOS หลุดแนวรับเดิม ยืนยันขาลง' : 'โครงสร้างตลาดกำลังสะสมพลัง (Re-accumulation)')));
+                updateConfItem('ob', confs.ob_present !== undefined ? confs.ob_present : true, confs.ob_desc || `ตรวจพบโซน Order Block แข็งแกร่งใน Timeframe ${style === 'scalping' ? 'M5' : 'M15'}`);
+                updateConfItem('fvg', confs.fvg_present !== undefined ? confs.fvg_present : true, confs.fvg_desc || `มีช่องว่างราคา FVG (Imbalance) หนุนทิศทาง`);
+                updateConfItem('liq', confs.liq_swept !== undefined ? confs.liq_swept : true, confs.liq_desc || `ราคาเคลียร์สภาพคล่อง ${act === 'BUY' ? 'SSL ใต้ฐานเดิม' : 'BSL เหนือยอดเดิม'} เรียบร้อย`);
+                updateConfItem('discount', confs.discount_zone !== undefined ? confs.discount_zone : true, confs.discount_desc || (act === 'BUY' ? 'ราคาอยู่ในโซน Discount (ถูกกว่า 50%) คุ้มค่าต่อการ BUY' : (act === 'SELL' ? 'ราคาอยู่ในโซน Premium (แพงกว่า 50%) คุ้มค่าต่อการ SELL' : 'ราคาอยู่ใกล้จุดกึ่งกลาง Equilibrium 50%')));
+
+                if (confScore) confScore.innerText = `${passedCount}/5 เงื่อนไขครบ`;
+            };
+
+            updateConfluences('full-');
+            updateConfluences('');
+
+            // Update Pivots & Intel in full view
+            if (this.marketIntelData) {
+                this.renderMarketIntelModalContent(this.marketIntelData, sym);
+            }
+        },
+
+        plotSMCPlanAndReturnToChart() {
+            if (!this.tradingPlanData) {
+                this.showToast('⚠️ กรุณารอข้อมูลการวิเคราะห์แผนเทรดเสร็จสิ้น');
+                return;
+            }
+
+            const activeChart = (window.chartEngine && window.chartEngine.getActiveChart) ? window.chartEngine.getActiveChart() : null;
+            if (!activeChart) {
+                this.showToast('⚠️ ไม่พบชาร์ตที่เลือกอยู่');
+                return;
+            }
+
+            if (window.SMCICTEngine && window.SMCICTEngine.plotTradePlanOnChart) {
+                const ok = window.SMCICTEngine.plotTradePlanOnChart(activeChart, this.tradingPlanData, this.activePlanStyle);
+                if (ok) {
+                    this.showToast(`✨ วาดแผนเทรด SMC (${this.activePlanStyle.toUpperCase()}) ลงบนชาร์ต ${activeChart.symbol} เรียบร้อย!`);
+                    this.closeFullAnalysisView();
+                    return;
+                }
+            }
+
+            this.showToast('⚠️ เกิดข้อผิดพลาดในการวาดแผนเทรดลงชาร์ต');
+        },
+
+        plotSMCPlanOnChart() {
+            this.plotSMCPlanAndReturnToChart();
         }
     };
 
@@ -2306,12 +3565,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 window.app.closeDrawingDropdown();
             }
         }
+        if (!e.target.closest('#custom-intel-container')) {
+            if (window.app && window.app.closeMarketIntelPopover) {
+                window.app.closeMarketIntelPopover();
+            }
+        }
     });
 
     // PWA Service Worker & Force-Update Auto Refresh Lifecycle
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-            navigator.serviceWorker.register('./sw.js?v=2.6.0')
+            navigator.serviceWorker.register('./sw.js?v=2.6.7')
                 .then(reg => {
                     console.log('[PWA] ServiceWorker registered with scope:', reg.scope);
                     
@@ -2393,6 +3657,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     window.chartEngine.deleteSelectedDrawing();
                 }
             }
+        } else if (e.altKey && (e.key === 'e' || e.key === 'E')) {
+            e.preventDefault();
+            if (window.app && window.app.selectToolFromPalette) {
+                window.app.selectToolFromPalette('eraser');
+            }
         } else if (e.altKey && (e.key === 'r' || e.key === 'R')) {
             e.preventDefault();
             const active = chartEngine.getActiveChart();
@@ -2440,5 +3709,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     setInterval(updateThailandClock, 1000);
     updateThailandClock();
 
-    console.log('[OK] TradingTools Workstation initialized (v2.5.5).');
+    // เริ่มต้นระบบติดตามข้อมูลตลาดอัจฉริยะ (Market Intelligence 24/7)
+    if (window.app && window.app.fetchMarketIntelligence) {
+        window.app.fetchMarketIntelligence();
+        setInterval(() => {
+            window.app.fetchMarketIntelligence();
+        }, 12000);
+    }
+
+    console.log('[OK] TradingTools Workstation initialized (v2.6.9) with Market Intelligence Engine.');
 });

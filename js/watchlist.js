@@ -21,6 +21,7 @@ class WatchlistManager {
         // คลังคู่สินทรัพย์แนะนำ (Catalogue)
         this.availablePresets = [
             { symbol: 'XAUUSD', name: 'Gold / US Dollar', category: 'Metals' },
+            { symbol: 'PAXGUSDT', name: 'PAX Gold (24/7 Weekend Proxy)', category: 'Metals' },
             { symbol: 'XAGUSD', name: 'Silver / US Dollar', category: 'Metals' },
             { symbol: 'BTCUSD', name: 'Bitcoin / US Dollar (MT5)', category: 'Crypto' },
             { symbol: 'BTCUSDT', name: 'Bitcoin / Tether (Spot)', category: 'Crypto' },
